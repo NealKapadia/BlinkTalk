@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+phrase_usage.json
+board/*.whl
+board/scipy_part_*
+labels.png

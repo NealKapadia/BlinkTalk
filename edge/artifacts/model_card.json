@@ -1,0 +1,148 @@
+{
+  "task": "BlinkTalk eye-gesture classification from EOG recorded on the AFE4950 ECG channel",
+  "classes": [
+    "blink",
+    "left",
+    "none",
+    "right"
+  ],
+  "features": [
+    "slope_at_onset",
+    "level_pre",
+    "level_post",
+    "step_short",
+    "loc_min",
+    "loc_max",
+    "loc_t_min_minus_t_max",
+    "loc_width_half",
+    "slope_max",
+    "slope_min",
+    "y_min",
+    "y_max",
+    "ptp",
+    "noise_pre"
+  ],
+  "config": {
+    "fs_hz": 500.0,
+    "window_s": [
+      -0.4,
+      0.8
+    ],
+    "refractory_s": 0.3,
+    "slope_k": 6.0,
+    "return_s": 1.5,
+    "multi_blink_s": 0.8,
+    "filters": "60 Hz notch (Q=30) + 10 Hz 2nd-order Butterworth low-pass, zero-phase",
+    "units": "mV, mV/s, ms, mV*s"
+  },
+  "model": "StandardScaler + RandomForestClassifier(n_estimators=80, max_depth=8, class_weight=balanced)",
+  "data": {
+    "rows": 498,
+    "subjects": [
+      "neal",
+      "person1"
+    ],
+    "label_counts": {
+      "none": 356,
+      "blink": 69,
+      "left": 37,
+      "right": 36
+    }
+  },
+  "evaluation": {
+    "split": "leave-one-subject-out cross-validation",
+    "folds": 2,
+    "events_tested": 498,
+    "classifier_only": {
+      "accuracy": 0.7791,
+      "macro_f1": 0.6266,
+      "confusion_matrix": [
+        [
+          32,
+          6,
+          0,
+          31
+        ],
+        [
+          6,
+          18,
+          0,
+          13
+        ],
+        [
+          0,
+          0,
+          25,
+          11
+        ],
+        [
+          3,
+          19,
+          21,
+          313
+        ]
+      ]
+    },
+    "with_gesture_rule": {
+      "accuracy": 0.8153,
+      "macro_f1": 0.6595,
+      "confusion_matrix": [
+        [
+          32,
+          6,
+          0,
+          31
+        ],
+        [
+          6,
+          16,
+          0,
+          15
+        ],
+        [
+          0,
+          0,
+          24,
+          12
+        ],
+        [
+          3,
+          11,
+          8,
+          334
+        ]
+      ]
+    },
+    "confusion_labels": [
+      "blink",
+      "left",
+      "right",
+      "none"
+    ],
+    "personal_models_time_split": {
+      "neal": {
+        "accuracy": 0.8083,
+        "macro_f1": 0.6979,
+        "spaced_accuracy": 1.0,
+        "fast_accuracy": 0.7229,
+        "n_train": 73,
+        "n_test": 120
+      },
+      "person1": {
+        "accuracy": 0.8564,
+        "macro_f1": 0.7952,
+        "spaced_accuracy": 0.9437,
+        "fast_accuracy": 0.8065,
+        "n_train": 110,
+        "n_test": 195
+      }
+    }
+  },
+  "limitations": "2 subjects. Signal size and direction differ between people and electrode placements, so the shared model transfers poorly; BlinkTalk therefore trains a personal model per user on the board (calibrate.py).",
+  "versions": {
+    "python": "3.12.3",
+    "scikit-learn": "1.9.1",
+    "numpy": "2.4.3",
+    "joblib": "1.6.0"
+  }
+}

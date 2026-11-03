@@ -1,0 +1,79 @@
+{
+  "user": "person1",
+  "split": "train = first 30 s of each recording, test = rest",
+  "train_counts": {
+    "blink": 12,
+    "left": 7,
+    "right": 7,
+    "none": 84
+  },
+  "test_counts": {
+    "blink": 32,
+    "left": 10,
+    "right": 11,
+    "none": 142
+  },
+  "accuracy": 0.8564,
+  "macro_f1": 0.7952,
+  "recall": {
+    "blink": 0.4688,
+    "left": 0.8,
+    "right": 1.0,
+    "none": 0.9366
+  },
+  "false_triggers": 9,
+  "confusion": {
+    "labels": [
+      "blink",
+      "left",
+      "right",
+      "none"
+    ],
+    "matrix": [
+      [
+        15,
+        0,
+        2,
+        15
+      ],
+      [
+        0,
+        8,
+        0,
+        2
+      ],
+      [
+        0,
+        0,
+        11,
+        0
+      ],
+      [
+        6,
+        0,
+        3,
+        133
+      ]
+    ]
+  },
+  "spaced_accuracy": 0.9437,
+  "fast_accuracy": 0.8065,
+  "alternate_block_split": {
+    "accuracy": 0.8288,
+    "macro_f1": 0.7689,
+    "spaced_accuracy": 0.8333,
+    "fast_accuracy": 0.8226,
+    "n_train": 159,
+    "n_test": 146
+  },
+  "training_ms": 83.4,
+  "latency_ms": {
+    "median": 3.956,
+    "p95": 5.069,
+    "worst": 7.151
+  },
+  "peak_memory_mb": 162.9,
+  "device": "x86_64",
+  "python": "3.12.3",
+  "scikit_learn": "1.9.1"
+}
