@@ -1,9 +1,8 @@
 __pycache__/
 *.pyc
-phrase_usage.json
-board/*.whl
-board/scipy_part_*
-labels.png
+board/offline_packages/*.whl
+board/offline_packages/scipy_part_*
+blinktalk_log.csv
 
 # secrets: never commit
 .env
@@ -18,3 +17,7 @@ dist/
 .vite/
 *.log
 hub/.photon-routes.json
+
+# training outputs (rebuilt by python training/train_model.py)
+training/build/
+training/output/

@@ -1,20 +1,22 @@
 {
   "name": "blinktalk",
   "private": true,
-  "description": "BlinkTalk: eye-movement communication with a SpacetimeDB backend, Photon iMessage and an AI agent",
+  "description": "BlinkTalk: talk, text and call for help with your eyes (SK-AM62B eye-command model, SpacetimeDB backend, iMessage via Photon, AI reply drafts)",
   "workspaces": [
     "spacetime",
     "hub",
     "dashboard"
   ],
   "scripts": {
-    "test": "npm test -w spacetime && npm test -w hub",
+    "start": "node scripts/start.mjs",
     "hub": "npm start -w hub",
     "dashboard": "npm run dev -w dashboard",
-    "check-secrets": "node scripts/check-secrets.mjs",
+    "ports": "node --import tsx scripts/ports.ts",
+    "test": "npm test -w spacetime && npm test -w hub && npm test -w dashboard",
     "e2e": "node --import tsx scripts/e2e.ts",
+    "llm-check": "node --import tsx scripts/llm-check.ts",
     "photon-check": "node --import tsx scripts/photon-check.ts",
-    "llm-check": "node --import tsx scripts/llm-check.ts"
+    "check-secrets": "node scripts/check-secrets.mjs"
   },
   "devDependencies": {
     "tsx": "^4.19.0"

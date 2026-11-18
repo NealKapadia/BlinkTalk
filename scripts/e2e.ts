@@ -5,8 +5,8 @@
  *   cd spacetime && spacetime publish -y blinktalk    (once)
  *   npm run e2e                                       (starts its own hub; Photon simulated)
  *
- * Plays every role: the speller (HTTP reducer calls, exactly like speller/cloud.py),
- * the hub (spawned as a child process), and the dashboard (WebSocket subscription).
+ * Plays every role: the board and patient screen (reducer calls over HTTP), the hub (spawned as a
+ * child process, Photon simulated, no board port), and the dashboard (WebSocket subscription).
  */
 import { spawn } from 'node:child_process';
 import { dirname, resolve } from 'node:path';
@@ -70,19 +70,19 @@ async function main() {
   const hubLog: string[] = [];
   const hub = spawn(process.execPath, ['--import', 'tsx', 'hub/src/main.ts'], {
     cwd: root,
-    env: { ...process.env, SPACETIME_URI: WS, SPACETIME_DB: DB, PHOTON_API_KEY: '', PHOTON_PROJECT_ID: '', NVIDIA_API_KEY: process.env.E2E_NVIDIA_API_KEY ?? '', GEMINI_API_KEY: process.env.E2E_GEMINI_API_KEY ?? '', NEMOTRON_BASE_URL: process.env.E2E_NEMOTRON_BASE_URL ?? 'https://integrate.api.nvidia.com/v1' },
+    env: { ...process.env, SPACETIME_URI: WS, SPACETIME_DB: DB, PHOTON_API_KEY: '', PHOTON_PROJECT_ID: '', AI_BASE_URL: process.env.E2E_AI_BASE_URL ?? '', AI_API_KEY: process.env.E2E_AI_API_KEY ?? '', AI_MODEL: process.env.E2E_AI_MODEL ?? '', BOARD_PORT: '' },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   hub.stdout.on('data', d => hubLog.push(String(d)));
   hub.stderr.on('data', d => hubLog.push(String(d)));
   ok('hub starts and connects', !!(await until('hub ready', () => hubLog.join('').includes('[hub] ready'), 30000)));
 
-  // ---------- speller role: eye events, live draft, heart rate (HTTP, like speller/cloud.py)
+  // ---------- board + patient screen: eye commands, heart rate, live draft
   await call('eye_command', P, 'right');
   await call('eye_command', P, 'select');
   await call('set_draft', P, "I'd like some wa");
   const live = await until('live draft', () => conn.db.patient.handle.find(P)?.draft === "I'd like some wa");
-  ok('speller draft reaches the dashboard live', !!live);
+  ok('patient draft reaches the dashboard live', !!live);
   ok('eye movements recorded', [...conn.db.eye_event.iter()].filter(e => e.patient === P).length >= 2);
   for (let i = 0; i < 3; i++) await call('heartbeat', P, 72 + i, 0.85);
   await until('heart', () => conn.db.patient.handle.find(P)?.heart_bpm === 74);
@@ -103,12 +103,12 @@ async function main() {
   ok('agent run produces reply suggestions', !!sugg, sugg ? `${sugg.length} from ${sugg[0].source}: ${sugg.map(s => s.text).join(' | ')}` : '');
   ok('agent steps logged for the dashboard', [...conn.db.agent_step.iter()].some(s => s.step === 'plan'));
   const viaSql = await sql(`SELECT * FROM suggestion WHERE patient = '${P}'`);
-  ok('speller can read suggestions over SQL', viaSql.length === (sugg?.length ?? -1));
+  ok('suggestions readable over SQL', viaSql.length === (sugg?.length ?? -1));
 
-  // ---------- speller sends a reply -> hub delivers via Photon (simulated)
+  // ---------- patient sends a reply -> hub delivers via Photon (simulated)
   await call('reply_latest', P, sugg?.[0]?.text ?? 'Yes please.');
   const sent = await until('delivery', () => [...conn.db.message.iter()].find(m => m.direction === 'out' && m.channel === 'imessage' && m.status === 'sent'));
-  ok('reply queued by speller, delivered by hub, marked sent', !!sent);
+  ok('reply queued by the patient, delivered by hub, marked sent', !!sent);
   ok('hub printed the outbound text', hubLog.join('').includes(`[photon:sim] -> ${MOM}`));
   ok('suggestions cleared after replying', [...conn.db.suggestion.iter()].filter(s => s.patient === P).length === 0);
 
@@ -131,7 +131,7 @@ async function main() {
   ok('caregiver "OK" acknowledges SOS', alert ? conn.db.alert.id.find(alert.id)?.acked_by === 'Mom' : false);
   ok('patient status back to idle', conn.db.patient.handle.find(P)?.status === 'idle');
 
-  // ---------- caregiver briefing (Gemini in the hub; plain summary without a key)
+  // ---------- caregiver briefing (AI model in the hub; plain summary without one)
   conn.reducers.requestBriefing({ patient: P, hours: 12, requested_by: 'e2e' });
   const brief = await until('briefing', () => [...conn.db.briefing.iter()].find(b => b.patient === P && b.status === 'done'), 30000);
   ok('"Catch me up" briefing written by the hub', !!brief && brief.text.length > 20, brief ? `${brief.model}: ${brief.text.slice(0, 90)}…` : '');

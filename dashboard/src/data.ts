@@ -198,7 +198,7 @@ function startDemo(set: (s: Snapshot) => void) {
       .map((text, rank) => ({ id: nid(), patient: 'neal', message_id: 0n, contact_id: 2n, text, rank, source: 'ai', created_at: now() }));
   });
   at(t + 6500, () => { eye('select'); eye('select'); msg(2n, 'out', 'Pho, please!', { assisted: true }); s.suggestions = []; s.patient!.last_spoken = 'Pho, please!'; });
-  at(t + 9000, () => { eye('sos'); s.patient!.status = 'sos'; s.patient!.heart_bpm = 118; s.alerts.push({ id: nid(), patient: 'neal', kind: 'sos', detail: 'Triple blink on the speller', level: 1, notified_level: 1, acked_by: '', created_at: now(), acked_at: undefined }); });
+  at(t + 9000, () => { eye('sos'); s.patient!.status = 'sos'; s.patient!.heart_bpm = 118; s.alerts.push({ id: nid(), patient: 'neal', kind: 'sos', detail: 'Five blinks (SOS)', level: 1, notified_level: 1, acked_by: '', created_at: now(), acked_at: undefined }); });
   const beat = window.setInterval(() => {
     const p = s.patient!;
     const target = p.status === 'sos' ? 116 : 72;
@@ -216,7 +216,7 @@ function startDemo(set: (s: Snapshot) => void) {
       if (command === 'toggle' && s.patient!.status !== 'sos') s.patient!.status = s.patient!.status === 'paused' ? 'idle' : 'paused';
       if (command === 'sos' && s.patient!.status !== 'sos') {
         s.patient!.status = 'sos';
-        s.alerts.push({ id: nid(), patient: 'neal', kind: 'sos', detail: 'Triple blink on the speller', level: 1, notified_level: 1, acked_by: '', created_at: now(), acked_at: undefined });
+        s.alerts.push({ id: nid(), patient: 'neal', kind: 'sos', detail: 'Five blinks (SOS)', level: 1, notified_level: 1, acked_by: '', created_at: now(), acked_at: undefined });
         timers.push(window.setTimeout(() => { const a = s.alerts.find(x => x.kind === 'sos' && !x.acked_by); if (a && PATIENT_VIEW) { a.acked_by = 'Mom'; a.acked_at = now(); s.patient!.status = 'idle'; push(); } }, 6000));
       }
       push();

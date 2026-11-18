@@ -1,156 +1,172 @@
 # BlinkTalk
 
-**Talk, text and call for help with your eyes.** Two blinks to choose, three to switch it on or off, five to call for help.
+**Talk, text and call for help with your eyes.** Glance left or right to move, blink twice to choose,
+three times to switch BlinkTalk on or off, five times to call for help.
 
-People with ALS, locked-in syndrome or a severe stroke often understand everything and can say nothing. BlinkTalk reads eye movements from three electrodes on the face and turns glances and blinks into speech, iMessages and SOS alerts. Family can see what their person is saying, live, from anywhere.
+People with ALS, locked-in syndrome or a severe stroke often understand everything and can say nothing.
+BlinkTalk reads eye movements from three electrodes on the face, recognises commands on a TI SK-AM62B
+board, and turns them into speech, iMessages and SOS alerts. Family can follow the conversation live and
+get alerted from anywhere.
 
-Built by Neal Kapadia.
+![How BlinkTalk recognises a command](docs/figures/pipeline.png)
+
+## How it works
 
 ```
- electrodes ─► TI AFE4950EVM ─► SK-AM62B (on-device C model: blink / left / right)
-                                   │ serial
-                                   ▼
-                     Python bridge (laptop) ──HTTP──┐
-                                                    ▼
- iMessage ◄─► Photon ◄─► Hub ◄──WebSocket──► SpacetimeDB module ◄──WebSocket──► Patient screen (browser)
-                          │                  (all state + rules)  ◄──WebSocket──► Caregiver dashboard
-                          └─► AI model (Azure AI Foundry; Nemotron / Gemini as fallbacks)
+ electrodes ─► AFE4950EVM ─USB─► SK-AM62B: blinktalk_board.py + C eye-command model (offline)
+                                     │ serial console
+                                     ▼
+ iMessage ◄─► Photon ◄─► hub ◄──WebSocket──► SpacetimeDB ◄──WebSocket──► patient screen (browser)
+                          │                  (state + rules)   ◄──WebSocket──► caregiver dashboard
+                          └─► AI model (Azure AI Foundry, or a local model)
 ```
 
-## What it does
+1. **The patient glances and blinks.** The SK-AM62B filters the eye signal, finds each eye movement and
+   classifies it with a 50-tree random forest written in plain C (about 120 KB, no dependencies). Left and
+   right move the highlight, 2 blinks select, 3 blinks switch BlinkTalk on or off (so the patient can rest
+   their eyes) and 5 blinks are SOS. Single blinks and groups of four are ignored. It also measures heart
+   rate from a fingertip PPG sensor.
+2. **The hub runs the board.** It opens the board's serial console, logs in, starts the eye-command model
+   and forwards every command and heart-rate reading to SpacetimeDB. Nothing to click on the board.
+3. **Every letter is live.** The patient screen is an eyes-only speller with word and phrase suggestions.
+   The caregiver dashboard shows the words appearing as they are chosen, plus eye activity and heart rate.
+4. **Someone texts the patient.** Photon delivers the iMessage, and the AI agent reads the conversation and
+   the patient's live state and puts four replies, written in the patient's voice, on their screen. One
+   double blink sends one back. The patient can also spell a few keywords ("alex pho") and pick **AI expand**
+   for ready-to-send messages addressed to the right person. Nothing is ever sent without the patient's own
+   selection.
+5. **The patient blinks five times.** SpacetimeDB raises an SOS and Photon texts tier-1 caregivers. If nobody
+   replies "OK" within 45 s it escalates to tier 2, then tier 3. When someone answers, the patient's screen
+   says help is coming. Heart rate out of range for 10 s raises the same kind of alert.
+6. **Family catches up.** **Catch me up** on the dashboard writes a short handoff note from the last 3-24
+   hours: conversations, alerts and how fast they were answered, and heart rate.
 
-1. **The patient glances and blinks.** The SK-AM62B classifies each eye movement on the device, offline. Left/right moves the highlight, two blinks select, three blinks switch BlinkTalk on or off (so the patient can rest their eyes) and five blinks are SOS. Single blinks and groups of four are ignored.
-2. **Every letter is live.** The bridge streams the patient's draft, eye movements and heart rate into SpacetimeDB. The caregiver dashboard shows the words appearing as they're chosen.
-3. **Someone texts the patient.** Photon delivers the iMessage into SpacetimeDB and the AI agent:
-   - reads the conversation and the patient's live state (heart rate, time, favourite phrases)
-   - decides whether caregivers need to know
-   - puts four replies, written in the patient's voice, on their screen
+## Results
 
-   One double blink sends a reply back over iMessage. The patient can also spell a few keywords ("alex pho") and pick **AI expand** to get ready-to-send messages already addressed to the right person ("to Alex: Can you bring pho tonight?"). To text anyone directly, the patient spells a message, picks **Text it**, and chooses the person.
-4. **The patient blinks five times.** SpacetimeDB raises an SOS and Photon texts tier-1 caregivers. If nobody replies "OK" within 45 s, a scheduled reducer escalates to tier 2, then tier 3. When someone replies "OK" (or taps *I'm on it* on the dashboard), the patient's screen says help is coming.
-5. **Family catches up.** On the dashboard, **Catch me up** writes a short handoff note from the last 3–24 hours: conversations, alerts and how fast they were answered, and heart rate.
+Measured with the C recognizer that runs on the board, on recordings it was never trained on
+(`python training/evaluate.py` reproduces these):
 
-## How it's built
-
-| Part | What it does |
+| Test | Result |
 |---|---|
-| **Eye-command model** (`edge/eog_c/`) | A 50-tree random forest in plain C (about 120 KB, no dependencies) on the SK-AM62B's Cortex-A53 cores. Bandpass filter, adaptive slope detector, 72 shape features per eye movement (including the small opposite spike that comes before a look), then a blink counter for select / on-off / SOS. **94% of commands recognised on held-out recordings, 91% on random cued sequences**, about 0.5 false events per minute at rest. Looks are reported about 0.9 s after the movement. |
-| **Board pipeline** (`edge/blinktalk_live.py`, `edge/afe_stream.py`) | Configures the AFE4950EVM over USB, streams the eye signal (500 Hz) and PPG (50 Hz), runs the model and heart rate, and prints `BLINKTALK CMD ...` lines over the serial console. Per-person calibrated models (scikit-learn) are still supported. |
-| **SpacetimeDB** (`spacetime/src/index.ts`) | The whole backend in one module: tables, reducers and a scheduled SOS-escalation reducer. It handles validation, heart-rate alert rules, phrase learning, conversation routing and acknowledgements. The bridge, hub and screens are thin clients with live subscriptions. Runs locally (`spacetime start`) or on Maincloud for remote family. |
-| **Photon** (`hub/src/photon.ts`) | Gives the patient a real iMessage line. People text them like anyone else, they answer with their eyes, and caregivers get SOS alerts in the chat app they already use. Replying "OK" acknowledges an alert. |
-| **AI agent** (`hub/src/agent.ts`, `hub/src/llm.ts`) | A tool-calling agent (`get_conversation`, `get_patient_state`, `list_contacts`, `alert_caregivers`, `propose_replies`, `propose_messages`) that drafts replies and expands keywords, and describes photos people text. It never speaks for the patient: nothing is sent without their own selection. Runs on GPT (`gpt-chat-latest-2`) on Azure AI Foundry when `AZURE_OPENAI_API_KEY` is set; otherwise NVIDIA Nemotron (hosted, or offline through Ollama). Falls back to built-in replies if no model is reachable. |
-| **Briefings** (`hub/src/briefing.ts`) | "Catch me up" notes, written by the same Azure model (Google Gemini if only its key is set; a plain summary with no key). Only first names and the patient's own words are sent. |
-| **Screens** (`dashboard/`) | React + Vite: the eyes-only patient screen and the caregiver dashboard. |
+| Random cued and self-paced command sequences (67 commands) | **63 / 67 recognised (94%)** |
+| Rest, chewing, scrolling a phone (3.8 min) | **0 false commands** |
+| Ordinary blinking with no command meant (1 min) | 7 false "select" (double blinks), no false on/off or SOS |
+| Latency | looks ~0.9 s after the movement; blink commands ~2 s after the last blink |
+| Footprint on the AM62B | ~120 KB of model tables, ~200 KB of state, no heap allocation |
 
-## Run it (Windows)
-
-Prerequisites: Node 22+, Python 3.10+, the SpacetimeDB CLI.
-
-```powershell
-# 1. SpacetimeDB CLI (once)
-iwr https://windows.spacetimedb.com -useb | iex
-
-# 2. JS dependencies (repo root, npm workspaces)
-npm install
-
-# 3. Secrets: copy .env.example to .env, then fill in AZURE_OPENAI_API_KEY and the Photon keys
-copy .env.example .env
-npm run llm-check             # checks the AI model: text, tool calls, photos
-
-# 4. Backend (terminal 1, leave running)
-spacetime start
-# (terminal 2, once per fresh database)
-cd spacetime ; spacetime publish --server local -y blinktalk ; cd ..
-
-# 5. Optional smoke tests
-npm run e2e                   # plays bridge + hub + dashboard against the server, ~20 s
-npm run photon-check          # confirms the Photon key and line
-
-# 6. Hub: Photon bridge + AI agent (terminal 2)
-npm run hub
-
-# 7. Screens (terminal 3)
-npm run dashboard
-#    Patient screen (full screen it, F11):  http://localhost:5173/?view=patient
-#    Caregiver dashboard:                   http://localhost:5173
-#    Keyboard stands in for the eyes on the patient screen: arrows / Space / S
-
-# 8. With the SK-AM62B board (terminal 4): forwards eye movements + heart rate
-pip install pyserial
-python speller/speller.py --serial COM12 --bridge
-#    (without --bridge, the older Tk speller runs as its own patient screen)
-```
-
-Setting up the SK-AM62B and AFE4950EVM, step by step: **[docs/AM62B_SETUP.md](docs/AM62B_SETUP.md)**. Signal processing, calibration and the recording protocol: [docs/HARDWARE.md](docs/HARDWARE.md).
-
-No backend handy? `http://localhost:5173/?demo` (caregiver) and `http://localhost:5173/?view=patient&demo` (patient) run on built-in sample data.
-
-### Photon setup (app.beta.photon.codes)
-
-1. **API keys:** create a key with `project:read` and `project:write`. Put it in `.env` as `PHOTON_API_KEY`, and the project id (`pho_prj_…`) as `PHOTON_PROJECT_ID`.
-2. **iMessage, then Add someone to the line:** add the iPhone number of every person who should text the patient or get their SOS alerts, and assign each one a number from the shared pool. That number is the patient's BlinkTalk line.
-3. **Each person texts that line once** (e.g. "hi"). A shared line can only reply to people who texted it first. The hub remembers each chat in `hub/.photon-routes.json`.
-4. Add the same people in the dashboard's **Care circle** with a tier, so SOS alerts reach them in order.
-5. Check it: `npm run photon-check` confirms the key works and lists recent texts to the line.
-
-### Offline AI (optional)
-
-With no `AZURE_OPENAI_API_KEY`, the hub can use a local Nemotron through Ollama:
-```powershell
-ollama pull nemotron-3-nano        # ~24 GB. Smaller machine: nemotron-3-nano:4b (~3 GB)
-```
-In `.env`: `NEMOTRON_BASE_URL=http://localhost:11434/v1` and `NEMOTRON_MODEL=nemotron-3-nano`. With local SpacetimeDB and the on-board eye model, only the messaging needs the internet.
-
-### Always-on cloud box (Maritime or any container host)
-
-`deploy/Dockerfile` runs the hub and serves the dashboard + patient screen on port 8080, against SpacetimeDB on Maincloud. Family get a public link, and the laptop only has to run the board bridge.
-
-```powershell
-pip install maritime
-cd spacetime ; spacetime publish --server maincloud -y blinktalk-neal ; cd ..   # once
-python scripts/maritime_deploy.py up       # deploys the current commit, prints the public links
-python scripts/maritime_deploy.py status   # links + recent logs
-python scripts/maritime_deploy.py down     # stop it
-```
-It reads the keys from `.env`; only committed files are uploaded (never `.env`). Run the board bridge on the laptop with `--spacetime https://maincloud.spacetimedb.com --db blinktalk-neal`. Run only one hub at a time (laptop *or* cloud), so each text is answered once.
-
-### SpacetimeDB on Maincloud (remote caregivers)
-
-```powershell
-spacetime login
-cd spacetime ; spacetime publish --server maincloud -y blinktalk-neal ; cd ..
-```
-Then set `SPACETIME_URI=wss://maincloud.spacetimedb.com` and `SPACETIME_DB=blinktalk-neal` in `.env`, run `python speller/speller.py --spacetime https://maincloud.spacetimedb.com --db blinktalk-neal`, and open the dashboard with `?uri=wss://maincloud.spacetimedb.com&db=blinktalk-neal`.
-
-Secrets live only in `.env` (gitignored). `npm run check-secrets` scans tracked files, and `node scripts/install-hooks.mjs` makes that check a pre-commit hook.
-
-## Tests
-
-```bash
-npm test -w spacetime        # 9 reducer tests on SpacetimeDB's in-process datastore
-npm test -w hub              # 25 tests: Azure provider (tools, photos, briefings, fallbacks), agent tool loop, recipient routing, Photon polling
-npm test -w dashboard        # 7 patient-screen tests: speller, recipient picker, spelling-cost model
-python edge/test_gestures.py # blink gestures: 2 choose, 3 on/off, 5 SOS
-python speller/test_cloud.py # 5 bridge <-> SpacetimeDB HTTP tests
-npm run e2e                  # 20 end-to-end checks against a running server (E2E_ESCALATION=1 adds the 45 s escalation)
-npm run llm-check            # live check of the AI model
-```
+How the model is trained and tested, with the per-recording numbers: [training/README.md](training/README.md).
+All the recordings are in [data/](data).
 
 ## Repository
 
-| Path | |
+| Path | What it is |
 |---|---|
-| `spacetime/` | SpacetimeDB module: the backend (TypeScript) |
-| `bindings/` | Typed client bindings (same shape as `spacetime generate`) |
-| `hub/` | Photon iMessage bridge, AI agent (`llm.ts` picks Azure / Nemotron), briefings, caregiver alert texting |
-| `dashboard/` | Caregiver console and patient screen (React + SpacetimeDB live subscription) |
-| `speller/` | Python board bridge + original Tk speller; `cloud.py` talks to SpacetimeDB |
-| `edge/` | Board software: AFE4950 streaming, live pipeline, the C eye-command model (`eog_c/`), calibration |
-| `board/` | Offline Python package installer for the SK-AM62B |
-| `deploy/` | Container for an always-on hub + public dashboard |
-| `scripts/` | End-to-end test, Photon and AI checks, secret scanner |
-| `docs/` | `AM62B_SETUP.md` (step-by-step board setup), `HARDWARE.md` (signal processing and calibration) |
+| [`board/`](board) | Runs on the SK-AM62B: `blinktalk_board.py` (the board program), `afe4950.py` (EVM reader and recorder), `heart_rate.py`, `eog/` (the C eye-command recognizer and model) |
+| [`hub/`](hub) | Node service on the laptop: board link (`board.ts`), Photon iMessage bridge (`photon.ts`), AI agent (`agent.ts`, `llm.ts`), caregiver briefings (`briefing.ts`) |
+| [`spacetime/`](spacetime) | The backend: one SpacetimeDB module with every table and rule (validation, phrase learning, heart-rate alerts, SOS escalation) |
+| [`bindings/`](bindings) | Typed client bindings for the module |
+| [`dashboard/`](dashboard) | React + Vite: the eyes-only patient screen and the caregiver dashboard |
+| [`training/`](training) | Rebuilds the eye-command model from the recordings and tests it end to end |
+| [`data/`](data) | Every recording used for training and testing, with a manifest |
+| [`docs/`](docs) | [Board setup](docs/BOARD_SETUP.md) and figures |
+| [`scripts/`](scripts) | `npm start` launcher, end-to-end test, AI and Photon checks, serial port list, secret scanner |
+| [`deploy/`](deploy) | Container for an always-on hub + dashboard |
+
+## Requirements
+
+| What | Version | Used for |
+|---|---|---|
+| [Node.js](https://nodejs.org) | 22 or newer | hub, screens, tests |
+| [SpacetimeDB CLI](https://spacetimedb.com/install) | 2.x | the backend database |
+| Python | 3.10 or newer | only for training the model (`training/`) and running board tests on a PC |
+| Hardware (optional) | TI SK-AM62B, TI AFE4950EVM, 3 gel electrodes, PPG finger sensor | live eye commands; without it the keyboard stands in for the eyes |
+
+Optional accounts: an AI model endpoint (Azure AI Foundry, or a local model through Ollama) for reply
+drafts and briefings, and [Photon](https://app.beta.photon.codes) for a real iMessage line. Without them
+BlinkTalk uses built-in replies and simulated texting.
+
+## Install
+
+```powershell
+git clone https://github.com/NealKapadia/BlinkTalk.git
+cd BlinkTalk
+npm install                                   # all JavaScript dependencies (npm workspaces)
+iwr https://windows.spacetimedb.com -useb | iex   # SpacetimeDB CLI on Windows (macOS/Linux: curl -sSf https://install.spacetimedb.com | sh)
+copy .env.example .env                        # then edit .env (macOS/Linux: cp .env.example .env)
+```
+
+In `.env` (every setting is explained in [.env.example](.env.example)):
+- `BOARD_PORT`: the board's COM port, e.g. `COM12` (`npm run ports` lists them). Leave empty without a board.
+- `AI_BASE_URL`, `AI_MODEL`, `AI_API_KEY`: your AI model. Check it with `npm run llm-check`.
+- `PHOTON_PROJECT_ID`, `PHOTON_API_KEY`: the iMessage line (see [Photon setup](#photon-setup)).
+
+The board needs its software copied once: [docs/BOARD_SETUP.md](docs/BOARD_SETUP.md).
+
+## Run
+
+```powershell
+spacetime start                                               # terminal 1: the database (leave running)
+cd spacetime; spacetime publish --server local -y blinktalk; cd ..   # once per fresh database
+npm start                                                     # terminal 2: hub + screens
+```
+
+- Patient screen: http://localhost:5173/?view=patient (full screen with F11)
+- Caregiver dashboard: http://localhost:5173
+
+With the board plugged in, the hub log shows `[board] model running: model=eog_c ...` and eye commands
+start moving the patient screen. Without a board, the keyboard stands in for the eyes on the patient
+screen: arrows = glance, Space = 2 blinks, P = 3 blinks, S = SOS.
+
+No database handy? `http://localhost:5173/?demo` and `http://localhost:5173/?view=patient&demo` run on
+built-in sample data (`npm run dashboard` is enough).
+
+### Photon setup
+
+1. At app.beta.photon.codes, create an API key with `project:read` and `project:write`. Put it in `.env`
+   as `PHOTON_API_KEY`, and the project id (`pho_prj_...`) as `PHOTON_PROJECT_ID`.
+2. Under **iMessage > Add someone to the line**, add the phone number of everyone who should text the
+   patient or get SOS alerts, and give each a number from the shared pool: that is the patient's BlinkTalk line.
+3. Each person texts that line once (e.g. "hi"): a shared line can only reply to people who texted it first.
+4. Add the same people under **Care circle** on the dashboard, with a tier, so SOS alerts reach them in order.
+5. `npm run photon-check` confirms the key works and lists recent texts to the line.
+
+### Local AI model (optional, works offline)
+
+```powershell
+ollama pull qwen3:8b
+```
+Then in `.env`: `AI_BASE_URL=http://localhost:11434/v1`, `AI_MODEL=qwen3:8b`, and no `AI_API_KEY`. Any
+OpenAI-compatible server works the same way. With local SpacetimeDB and the on-board eye model, only
+iMessage needs the internet.
+
+### Family on other networks (SpacetimeDB Maincloud)
+
+```powershell
+spacetime login
+cd spacetime; spacetime publish --server maincloud -y blinktalk; cd ..
+```
+Set `SPACETIME_URI=wss://maincloud.spacetimedb.com` in `.env` and open the dashboard with
+`?uri=wss://maincloud.spacetimedb.com&db=blinktalk`. `deploy/Dockerfile` packages the hub and the screens for
+any container host (`docker build -f deploy/Dockerfile -t blinktalk .`); run one hub at a time so each text is
+answered once.
+
+## Tests
+
+```powershell
+npm test                      # 47 tests: SpacetimeDB module (9), hub (31: board link, AI agent, briefings, Photon), patient screen (7)
+npm run e2e                   # 20 end-to-end checks against a running SpacetimeDB (hub spawned, Photon simulated)
+python board/test_board.py    # board program replaying recordings (Linux, WSL, or on the board)
+python training/evaluate.py   # end-to-end accuracy of the eye-command model (needs gcc)
+npm run llm-check             # live check of your AI model: text, tool calls, photos
+npm run check-secrets         # scans tracked files for keys (node scripts/install-hooks.mjs adds it as a pre-commit hook)
+```
 
 ## Limits and safety
 
-BlinkTalk is a research prototype, not a medical device. The eye-command model was trained and tested on one person; other people should be checked (and calibrated) before relying on it. Heart rate comes from a fingertip PPG sensor. SOS escalation depends on the laptop, network and Photon being up, so it does not replace a nurse-call system. The AI only drafts; nothing is sent without the patient's own selection, except caregiver alerts.
+BlinkTalk is a research prototype, not a medical device. The eye-command model was trained on one person
+with one electrode placement; anyone else should be tested before relying on it (`data/` has recordings from
+a second volunteer for this). Heart rate comes from a fingertip PPG sensor. SOS escalation depends on the
+laptop, the network and Photon being up, so it does not replace a nurse-call system. The AI only drafts:
+nothing is sent without the patient's own selection, except caregiver alerts.
+
+Built by Neal Kapadia.

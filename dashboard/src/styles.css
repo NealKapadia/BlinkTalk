@@ -234,7 +234,7 @@ button { cursor: pointer; }
 .msg .photo { font-style: italic; display: flex; gap: 8px; align-items: baseline; }
 .msg .photo .icon { flex: none; color: var(--lamp-ink); transform: translateY(0.1em); }
 
-/* caregiver briefing (Gemini) */
+/* caregiver briefing */
 .catchup .brief { margin: 0 0 6px; font: 18px/1.55 var(--voice); max-width: 60ch; }
 .catchup .row { margin-top: 12px; }
 .btn { padding: 10px 18px; border-radius: 10px; border: 0; background: var(--lamp); color: var(--lamp-on); font-weight: 700; box-shadow: 4px 4px 10px var(--lo), -3px -3px 8px var(--hi); }

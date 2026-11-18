@@ -5,12 +5,10 @@ import { readFileSync } from 'node:fs';
 
 const PATTERNS = [
   [/nvapi-[A-Za-z0-9_-]{20,}/, 'NVIDIA API key'],
-  [/\bbak-[A-Za-z0-9_-]{20,}/, 'Brev key'],
-  [/^\s*(AZURE_OPENAI_API_KEY|PHOTON_API_KEY|PHOTON_PROJECT_SECRET|NVIDIA_API_KEY|MARITIME_API_KEY|GEMINI_API_KEY)=\S{8,}/m, 'secret assignment'],
+  [/^\s*(AI_API_KEY|AZURE_OPENAI_API_KEY|PHOTON_API_KEY|PHOTON_PROJECT_SECRET)=\S{8,}/m, 'secret assignment'],
   [/sk-[A-Za-z0-9]{32,}/, 'OpenAI-style key'],
   [/\b[A-Za-z0-9]{70,}JQQJ[A-Za-z0-9]{8,}\b/, 'Azure key'],
   [/\bpho_(?!prj_|org_)[a-z]+_[A-Za-z0-9]{20,}/, 'Photon API key'],
-  [/\bmk_[A-Za-z0-9]{30,}/, 'Maritime API key'],
   [/\bAIza[0-9A-Za-z_-]{30,}/, 'Google API key'],
   [/\bAQ\.[A-Za-z0-9_-]{30,}/, 'Google API key'],
   [/-----BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY-----/, 'private key'],

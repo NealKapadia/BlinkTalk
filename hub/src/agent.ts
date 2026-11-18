@@ -1,6 +1,5 @@
 /**
- * BlinkTalk agent. Runs on Azure AI Foundry (gpt-chat-latest-2) when AZURE_OPENAI_API_KEY is set,
- * otherwise on NVIDIA Nemotron; the model calls go through llm.ts.
+ * BlinkTalk agent. The model calls go through llm.ts (Azure AI Foundry or a local model).
  *
  * Every glance costs the patient seconds, so the agent turns an incoming text
  * (or 2-3 keywords picked with the eyes) into four complete, first-person
@@ -10,12 +9,11 @@
  * only then proposes replies. Every step is written to the agent_step table so
  * caregivers can watch it work.
  *
- * Runs against NVIDIA's hosted API (build.nvidia.com) or a local Nemotron
- * served by Ollama / vLLM / NIM (any OpenAI-compatible endpoint), so the whole
- * system can run with no internet except the messaging channel.
+ * With a local model (AI_BASE_URL=http://localhost:11434/v1) the whole system runs with no
+ * internet except the messaging channel.
  */
 import { randomUUID } from 'node:crypto';
-import { chatCompletion, provider, type Fetch, type ToolCall } from './llm.ts';
+import { aiConfigured, chatCompletion, type Fetch, type ToolCall } from './llm.ts';
 export type { Fetch } from './llm.ts';
 
 // ------------------------------------------------------------------ ports
@@ -53,7 +51,7 @@ export function fallbackReplies(task: Task): string[] {
   return ['Thank you.', 'Love you.', 'Can you call me?', 'Talk soon.'];
 }
 
-// ------------------------------------------------------------------ Nemotron client
+// ------------------------------------------------------------------ model client
 type ChatMsg =
   | { role: 'system' | 'user'; content: string }
   | { role: 'assistant'; content: string | null; tool_calls?: ToolCall[] }
@@ -158,10 +156,10 @@ export function parseRepliesFromText(s: string): string[] | null {
   return lines.length >= 2 ? lines.slice(0, 4) : null;
 }
 
-export const agentConfigured = () => provider() !== 'none';
+export const agentConfigured = aiConfigured;
 
 async function chat(fetchFn: Fetch, messages: ChatMsg[], useTools: boolean): Promise<{ content: string | null; tool_calls?: ToolCall[] }> {
-  return chatCompletion(fetchFn, { messages, tools: useTools ? TOOLS : undefined, maxTokens: 800, temperature: 0.4 });
+  return chatCompletion(fetchFn, { messages, tools: useTools ? TOOLS : undefined, maxTokens: 800 });
 }
 
 function clampReplies(replies: unknown[]): string[] {
@@ -193,7 +191,7 @@ export const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
 /**
  * Describe a photo someone texted the patient, in one or two plain sentences, so it
  * can be shown on their screen and used as context for replies. Uses the same
- * vision model (image as a data URL): Azure deployment, or Nemotron VL. Returns null if no model is reachable.
+ * vision-capable model (image as a data URL). Returns null if no model is reachable.
  */
 export async function describeImage(
   image: { data: Buffer; contentType: string }, senderName: string, caption: string, fetchFn: Fetch = fetch,
@@ -203,7 +201,7 @@ export async function describeImage(
     'Describe what matters in it in one or two short, warm, concrete sentences (people, food, places, text in the image). No preamble.';
   try {
     const msg = await chatCompletion(fetchFn, {
-      vision: true, maxTokens: 160, temperature: 0.2,
+      vision: true, maxTokens: 160,
       messages: [{ role: 'user', content: [
         { type: 'text', text: prompt },
         { type: 'image_url', image_url: { url: `data:${image.contentType};base64,${image.data.toString('base64')}` } },
@@ -240,7 +238,7 @@ export async function runAgent(task: Task, ports: AgentPorts, fetchFn: Fetch = f
     return finish(fallbackReplies(task), 'fallback');
   };
 
-  if (!agentConfigured()) return finishFallback('No AI model configured (AZURE_OPENAI_API_KEY or NVIDIA_API_KEY); using built-in replies.');
+  if (!agentConfigured()) return finishFallback('No AI model configured (AI_BASE_URL); using built-in replies.');
 
   const messages: ChatMsg[] = [
     { role: 'system', content: systemPrompt(ports.patientName) },

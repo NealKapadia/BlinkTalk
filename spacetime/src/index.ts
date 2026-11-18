@@ -6,13 +6,13 @@
  * contacts and SOS alerts with a scheduled escalation ladder. The rest of the
  * system is clients that subscribe to it or call its reducers:
  *
- *   speller (Python, HTTP)    -> eye_command, set_draft, speak, send_message, raise_sos, heartbeat
+ *   hub/board  (Node, WS)     -> eye_command, heartbeat         (from the SK-AM62B)
+ *   patient screen (WS)       -> set_draft, speak, reply_latest, request_intent, cancel_sos (+ eye_command from the keyboard)
+ *   caregiver dashboard (WS)  -> ack_alert, add_contact, send_message, request_briefing
  *   hub/photon (Node, WS)     -> receive_message, mark_message, ack_alert_by_reply
  *   hub/agent  (Node, WS)     -> add_suggestions, log_agent_step, raise_sos
- *   dashboard  (React, WS)    -> live subscription + ack_alert, add_contact, send_message
  *
- * Column and table names are snake_case so SQL from the speller and the
- * generated client bindings agree.
+ * Column and table names are snake_case so SQL queries and the generated client bindings agree.
  */
 import { schema, t, table, SenderError, ScheduleAt, type ReducerCtx, type InferSchema } from 'spacetimedb/server';
 
@@ -80,7 +80,7 @@ const suggestion = table(
     contact_id: t.u64(),
     text: t.string(),
     rank: t.u8(),
-    source: t.string(),                // nemotron | fallback
+    source: t.string(),                // ai | fallback
     created_at: t.timestamp(),
   }
 );
@@ -164,7 +164,7 @@ const briefing = table(
     hours: t.u16(),                    // how far back it covers
     status: t.string(),                // pending | done
     text: t.string(),
-    model: t.string(),                 // gemini model id, or "rules" when no key
+    model: t.string(),                 // AI model name, or "rules" when no model is configured
     requested_by: t.string(),
     created_at: t.timestamp(),
   }
@@ -315,7 +315,7 @@ export const eye_command = spacetimedb.reducer(
     ctx.db.eye_event.insert({ id: 0n, patient: handle, command, at: ctx.timestamp });
     prune(ctx.db.eye_event.iter(), handle, KEEP_EYE_EVENTS, r => ctx.db.eye_event.id.delete(r.id));
     if (command === 'sos') {
-      raiseAlert(ctx, handle, 'sos', 'Five blinks on the speller');
+      raiseAlert(ctx, handle, 'sos', 'Five blinks (SOS)');
       touch(ctx, handle, { status: 'sos' });
     } else if (command === 'toggle') {
       const p = getPatient(ctx, handle);
@@ -387,7 +387,7 @@ export const send_message = spacetimedb.reducer(
   }
 );
 
-/** Reply to whoever wrote most recently (what the speller's "Send reply" does). */
+/** Reply to whoever wrote most recently (what picking a suggested reply on the patient screen does). */
 export const reply_latest = spacetimedb.reducer(
   { patient: t.string(), body: t.string() },
   (ctx, { patient: handle, body }) => {
@@ -503,7 +503,7 @@ export const log_agent_step = spacetimedb.reducer(
   }
 );
 
-// ------------------------------------------------------------------ caregiver briefing (written by Gemini in the hub)
+// ------------------------------------------------------------------ caregiver briefing (written by the AI model in the hub)
 export const request_briefing = spacetimedb.reducer(
   { patient: t.string(), hours: t.u16(), requested_by: t.string() },
   (ctx, { patient: handle, hours, requested_by }) => {

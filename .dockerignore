@@ -4,4 +4,6 @@
 .env
 .env.*
 hub/.photon-routes.json
-edge/data
+data
+training
+board

@@ -70,7 +70,7 @@ test('inbound text creates a contact; reply_latest queues an iMessage and clears
   const { h, run } = harness();
   run(ctx => mod.receive_message(ctx, { patient: 'neal', address: '+14695550199', sender_name: 'Alex', channel: 'imessage', body: 'Want visitors tonight?' }));
   const inbound = [...h.db.message.iter()][0];
-  run(ctx => mod.add_suggestions(ctx, { patient: 'neal', message_id: inbound.id, contact_id: inbound.contact_id, texts: ['Yes, come by at 7.', 'Not tonight.', '', 'Bring snacks!', 'extra'], source: 'nemotron' }));
+  run(ctx => mod.add_suggestions(ctx, { patient: 'neal', message_id: inbound.id, contact_id: inbound.contact_id, texts: ['Yes, come by at 7.', 'Not tonight.', '', 'Bring snacks!', 'extra'], source: 'ai' }));
   assert.equal([...h.db.suggestion.iter()].length, 3, 'blank dropped, max 4 considered');
   run(ctx => mod.reply_latest(ctx, { patient: 'neal', body: 'Yes, come by at 7.' }));
   const out = [...h.db.message.iter()].find(m => m.direction === 'out')!;
@@ -84,7 +84,7 @@ test('routed suggestions go to the inferred person; sending one is marked AI-ass
   const { h, run } = harness();
   run(ctx => mod.add_contact(ctx, { patient: 'neal', name: 'Alex', address: '+19725550142', relation: 'brother', tier: 2 }));
   const alex = [...h.db.contact.iter()][0];
-  run(ctx => mod.add_routed_suggestions(ctx, { patient: 'neal', message_id: 0n, contact_ids: [alex.id, 999n], texts: ['Can you bring pho tonight?', 'Hi'], source: 'nemotron' }));
+  run(ctx => mod.add_routed_suggestions(ctx, { patient: 'neal', message_id: 0n, contact_ids: [alex.id, 999n], texts: ['Can you bring pho tonight?', 'Hi'], source: 'ai' }));
   const sugg = [...h.db.suggestion.iter()].sort((a, b) => a.rank - b.rank);
   assert.equal(sugg[0].contact_id, alex.id);
   assert.equal(sugg[1].contact_id, 0n, 'unknown contact falls back to 0');
@@ -101,7 +101,7 @@ test('briefings: request is pending, the hub fills it in, only 10 kept', () => {
   assert.equal(all.length, 10);
   assert.equal(all[0].hours, 72, 'clamped to 72 h');
   assert.equal(all[0].status, 'pending');
-  run(ctx => mod.set_briefing(ctx, { id: all[0].id, text: 'Quiet night.', model: 'gemini-flash-latest' }));
+  run(ctx => mod.set_briefing(ctx, { id: all[0].id, text: 'Quiet night.', model: 'gpt-chat-latest-2' }));
   const b = h.db.briefing.id.find(all[0].id)!;
   assert.equal(b.status, 'done');
   assert.equal(b.text, 'Quiet night.');

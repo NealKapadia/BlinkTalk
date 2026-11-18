@@ -3,15 +3,15 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "Photon iMessage bridge + Nemotron agent, both clients of the BlinkTalk SpacetimeDB module",
+  "description": "BlinkTalk hub: board link, Photon iMessage bridge and AI agent, all clients of the SpacetimeDB module",
   "scripts": {
     "start": "tsx src/main.ts",
     "typecheck": "tsc --noEmit",
     "test": "node --import tsx --test test/*.test.ts"
   },
   "dependencies": {
-    "spacetimedb": "2.14.1",
-    "spectrum-ts": "12.15.0"
+    "serialport": "^13.0.0",
+    "spacetimedb": "2.14.1"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

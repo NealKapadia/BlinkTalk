@@ -339,7 +339,7 @@ function CatchUp({ snap, name, actions }: { snap: Snapshot; name: string; action
         <>
           <p className="brief">{latest.text}</p>
           <p className="hint">
-            {latest.model === 'rules' ? 'Plain summary (add an Azure AI key for a written briefing).' : `Written by ${latest.model.startsWith('azure:') ? 'GPT on Azure AI Foundry' : latest.model.startsWith('gemini') ? 'Google Gemini' : 'AI'} from the last ${latest.hours} hours.`} Asked by {latest.requested_by}.
+            {latest.model === 'rules' ? 'Plain summary (connect an AI model in .env for a written briefing).' : `Written by ${latest.model} from the last ${latest.hours} hours.`} Asked by {latest.requested_by}.
           </p>
         </>
       ) : (

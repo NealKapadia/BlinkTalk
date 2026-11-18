@@ -1,4 +1,4 @@
-// Cloud entrypoint (Maritime or any container host): runs the hub and serves the
+// Container entrypoint: runs the hub and serves the
 // built dashboard + patient screen on $PORT. Restarts the hub if it exits.
 import { spawn } from 'node:child_process';
 import { createServer } from 'node:http';

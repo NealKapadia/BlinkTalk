@@ -1,0 +1,2 @@
+numpy        # preinstalled on the SK-AM62B (TI SDK Linux)
+scipy==1.18.1

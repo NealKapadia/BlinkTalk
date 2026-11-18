@@ -2,9 +2,10 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { AgentPorts } from '../src/agent.ts';
 
-process.env.AZURE_OPENAI_API_KEY = '';            // these tests cover the Nemotron path, even if .env has an Azure key
-process.env.NVIDIA_API_KEY = 'test-key-not-real';
-process.env.NEMOTRON_BASE_URL = 'https://integrate.api.nvidia.com/v1';
+// a local model server (Ollama-style): no API key needed; real environment variables win over .env
+process.env.AI_BASE_URL = 'http://localhost:11434/v1';
+process.env.AI_API_KEY = '';
+process.env.AI_MODEL = 'local-test-model';
 const { runAgent, parseRepliesFromText, resolveContact } = await import('../src/agent.ts');
 
 function fakePorts() {
@@ -45,6 +46,7 @@ test('multi-step tool run: reads context, then proposes 4 replies', async () => 
   assert.deepEqual(replies, ['Yes, I am awake.', 'Very tired today.', 'Can you visit?', 'Call me later.']);
   assert.equal(calls.proposed[0][1], 'ai');
   assert.equal(bodies.length, 2);
+  assert.equal(bodies[0].model, 'local-test-model');
   assert.equal(bodies[0].tools.length, 6, 'tools offered');
   assert.equal(bodies[1].messages.filter((m: any) => m.role === 'tool').length, 2, 'tool results fed back');
   assert.ok(calls.logs.some(l => l.startsWith('plan:')));
@@ -61,7 +63,7 @@ test('agent can alert caregivers once, then still proposes replies', async () =>
   assert.equal(calls.proposed.length, 1);
 });
 
-test('Nemotron outage falls back to built-in replies', async () => {
+test('model outage falls back to built-in replies', async () => {
   const { ports, calls } = fakePorts();
   const { fn } = scriptedFetch([new Response('upstream down', { status: 503 })]);
   const replies = await runAgent({ kind: 'reply', message: { body: 'Want me to bring dinner?' } }, ports, fn);
@@ -95,7 +97,7 @@ test('reply parser handles JSON, numbered lists and thinking tags', () => {
   assert.deepEqual(parseRepliesFromText('<think>x</think>1. Yes\n2. No\n3. Later'), ['Yes', 'No', 'Later']);
 });
 
-test('keywords naming a person: Nemotron routes each message to the right contact', async () => {
+test('keywords naming a person: the agent routes each message to the right contact', async () => {
   const { ports, calls } = fakePorts();
   const { fn, bodies } = scriptedFetch([
     { content: null, tool_calls: [tc('list_contacts', {})] },
@@ -117,7 +119,7 @@ test('contact matching handles names, relations and nicknames', () => {
   assert.equal(resolveContact('pizza guy', people), undefined);
 });
 
-test('photo: Nemotron vision gets the image as a data URL and returns a short description', async () => {
+test('photo: the vision model gets the image as a data URL and returns a short description', async () => {
   const { describeImage, photoTag } = await import('../src/agent.ts');
   const { fn, bodies } = scriptedFetch([{ content: '<think>x</think>A steaming bowl of pho with basil and lime.' }]);
   const d = await describeImage({ data: Buffer.from([1, 2, 3]), contentType: 'image/png' }, 'Alex', 'dinner!', fn);

@@ -19,6 +19,8 @@ export function loadDotEnv(path = resolve(here, '../../.env')): void {
     let value = line.slice(eq + 1).trim();
     if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
       value = value.slice(1, -1);
+    } else {
+      value = value.replace(/\s+#.*$/, '');            // inline comment: KEY=value   # note
     }
     if (process.env[key] === undefined) process.env[key] = value;
   }
@@ -32,21 +34,18 @@ export const settings = {
   patient: env('BLINKTALK_PATIENT', 'neal'),
   spacetimeUri: env('SPACETIME_URI', 'ws://localhost:3000'),
   spacetimeDb: env('SPACETIME_DB', 'blinktalk'),
-  nvidiaKey: env('NVIDIA_API_KEY'),
-  nemotronModel: env('NEMOTRON_MODEL', 'nvidia/nemotron-3.5-super-vl-120b-a12b'),
-  visionModel: env('NEMOTRON_VISION_MODEL'),   // optional separate VL model for photos; defaults to NEMOTRON_MODEL
-  nemotronBaseUrl: env('NEMOTRON_BASE_URL', 'https://integrate.api.nvidia.com/v1').replace(/\/$/, ''),
-  nemotronThinking: env('NEMOTRON_THINKING', '0') === '1',
-  nemotronTimeoutMs: Number(env('NEMOTRON_TIMEOUT', '90')) * 1000,
-  // Azure AI Foundry (OpenAI v1 API). When AZURE_OPENAI_API_KEY is set it replaces both Nemotron
-  // (reply drafts, photo descriptions) and Gemini (caregiver briefings): one fast model for everything.
-  azureKey: env('AZURE_OPENAI_API_KEY'),
-  azureEndpoint: env('AZURE_OPENAI_ENDPOINT', 'https://zincbatteryresearch.services.ai.azure.com/openai/v1').replace(/\/$/, ''),
-  azureDeployment: env('AZURE_OPENAI_DEPLOYMENT', 'gpt-chat-latest-2'),
-  azureTimeoutMs: Number(env('AZURE_OPENAI_TIMEOUT', '20')) * 1000,
-  geminiKey: env('GEMINI_API_KEY'),
-  geminiModel: env('GEMINI_MODEL', 'gemini-flash-latest'),
-  geminiTimeoutMs: Number(env('GEMINI_TIMEOUT', '40')) * 1000,
+  // AI model: any OpenAI-compatible chat-completions endpoint (Azure AI Foundry, or a local Ollama / vLLM)
+  aiBaseUrl: env('AI_BASE_URL').replace(/\/$/, ''),
+  aiApiKey: env('AI_API_KEY'),
+  aiModel: env('AI_MODEL'),
+  aiVisionModel: env('AI_VISION_MODEL'),       // optional separate model for photos; defaults to AI_MODEL
+  aiTimeoutMs: Number(env('AI_TIMEOUT', '20')) * 1000,
+  // SK-AM62B serial console (empty = no board; the patient screen still works with the keyboard)
+  boardPort: env('BOARD_PORT'),
+  boardDir: env('BOARD_DIR', '/root/blinktalk'),
+  boardSensitivity: Math.max(1, Math.min(10, Number(env('BOARD_SENSITIVITY', '5')) || 5)),
+  boardLed: env('BOARD_LED') ? Number(env('BOARD_LED')) : undefined,
+  boardSwapLR: env('BOARD_SWAP_LR', '0') === '1',
   photonProjectId: env('PHOTON_PROJECT_ID'),
   photonApiKey: env('PHOTON_API_KEY'),
   photonBaseUrl: env('PHOTON_BASE_URL', 'https://api.photon.codes'),

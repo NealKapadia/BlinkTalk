@@ -1,15 +1,11 @@
 /**
- * Caregiver briefing, written by the Azure AI Foundry model (AZURE_OPENAI_API_KEY), or by
- * Google Gemini when only GEMINI_API_KEY is set.
- * A caregiver
- * taps "Catch me up" and Gemini turns the last N hours (conversation, alerts and
- * how fast they were answered, heart rate, how much the patient communicated)
- * into a short, warm, plain-language handoff note, like a nurse's shift handoff.
+ * Caregiver briefing ("Catch me up"). A caregiver taps the button and the AI model (llm.ts) turns
+ * the last N hours (conversation, alerts and how fast they were answered, heart rate, how much the
+ * patient communicated) into a short, warm, plain-language note, like a nurse's shift handoff.
  * Only first names and the patient's own words are sent: no phone numbers.
- * With neither key the hub writes a plain rule-based summary instead.
+ * With no model configured, or if the call fails, the hub writes a plain rule-based summary instead.
  */
-import { settings } from './env.ts';
-import { chatCompletion, modelLabel } from './llm.ts';
+import { aiConfigured, chatCompletion, modelLabel } from './llm.ts';
 
 export interface Period {
   patientName: string;
@@ -66,41 +62,14 @@ export function rulesBriefing(p: Period): string {
 }
 
 export async function writeBriefing(p: Period, fetchFn: Fetch = fetch): Promise<{ text: string; model: string }> {
-  if (settings.azureKey) {
-    try {
-      const msg = await chatCompletion(fetchFn, { messages: [{ role: 'user', content: PROMPT(periodToText(p)) }], maxTokens: 700 });
-      const text = (msg.content ?? '').trim();
-      if (!text) throw new Error('Azure returned no text');
-      return { text: text.slice(0, 2000), model: modelLabel() };
-    } catch (err) {
-      console.error('[briefing] Azure unavailable, using a plain summary:', String((err as Error).message ?? err).slice(0, 300));
-      return { text: rulesBriefing(p), model: 'rules' };
-    }
-  }
-  if (!settings.geminiKey) return { text: rulesBriefing(p), model: 'rules' };
-  const ctl = new AbortController();
-  const timer = setTimeout(() => ctl.abort(), settings.geminiTimeoutMs);
+  if (!aiConfigured()) return { text: rulesBriefing(p), model: 'rules' };
   try {
-    const res = await fetchFn(`https://generativelanguage.googleapis.com/v1beta/models/${settings.geminiModel}:generateContent`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-goog-api-key': settings.geminiKey },
-      signal: ctl.signal,
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: PROMPT(periodToText(p)) }] }],
-        // generous limit: newer Flash models spend part of it thinking before they write
-        generationConfig: { temperature: 0.3, maxOutputTokens: 2048 },
-      }),
-    });
-    if (!res.ok) throw new Error(`Gemini HTTP ${res.status}: ${(await res.text()).slice(0, 200)}`);
-    const data = (await res.json()) as { candidates?: Array<{ content?: { parts?: Array<{ text?: string; thought?: boolean }> } }> };
-    const text = (data.candidates?.[0]?.content?.parts ?? []).filter(x => !x.thought).map(x => x.text ?? '').join('').trim();
-    if (!text) throw new Error('Gemini returned no text');
-    return { text: text.slice(0, 2000), model: settings.geminiModel };
+    const msg = await chatCompletion(fetchFn, { messages: [{ role: 'user', content: PROMPT(periodToText(p)) }], maxTokens: 700 });
+    const text = (msg.content ?? '').replace(/<think>[\s\S]*?<\/think>/g, '').trim();
+    if (!text) throw new Error('the model returned no text');
+    return { text: text.slice(0, 2000), model: modelLabel() };
   } catch (err) {
-    const why = (err as Error)?.name === 'AbortError' ? `no answer within ${settings.geminiTimeoutMs / 1000}s` : String((err as Error).message ?? err).slice(0, 300);
-    console.error('[briefing] Gemini unavailable, using a plain summary:', why);
+    console.error('[briefing] AI unavailable, using a plain summary:', String((err as Error).message ?? err).slice(0, 300));
     return { text: rulesBriefing(p), model: 'rules' };
-  } finally {
-    clearTimeout(timer);
   }
 }

@@ -1,8 +1,10 @@
 /**
  * BlinkTalk hub: connects SpacetimeDB to the outside world.
+ *   - Board: starts the eye-command model on the SK-AM62B over its serial console and forwards
+ *     eye commands and heart rate (board.ts)
  *   - Photon: inbound iMessages -> receive_message; queued outbound -> delivered -> mark_message
  *   - Alerts: SOS / heart-rate alerts -> texts to caregivers, tier by tier as SpacetimeDB escalates
- *   - Agent: every inbound text or eye-picked intent -> AI run (Azure or Nemotron) -> suggestions
+ *   - Agent: every inbound text or eye-picked intent -> AI run -> suggestions
  */
 import type { Alert, Message, Intent } from '../../bindings/index.ts';
 import { settings, redact } from './env.ts';
@@ -10,6 +12,8 @@ import { connect, contactById, contactsOf, conversation, recentHeart, topPhrases
 import { startPhoton, type Messenger } from './photon.ts';
 import { runAgent, describeImage, photoTag, type AgentPorts, type Task } from './agent.ts';
 import { writeBriefing, type Period } from './briefing.ts';
+import { aiConfigured } from './llm.ts';
+import { runBoardLink } from './board.ts';
 import type { Briefing } from '../../bindings/index.ts';
 
 const P = settings.patient;
@@ -163,12 +167,9 @@ function periodFor(conn: Conn, hours: number): Period {
 // ------------------------------------------------------------------ main
 async function main() {
   console.log(`[hub] patient=${P} spacetime=${settings.spacetimeUri}/${settings.spacetimeDb}`);
-  if (settings.azureKey) {
-    console.log(`[hub] AI: Azure AI Foundry ${settings.azureEndpoint} deployment=${settings.azureDeployment} key=${redact(settings.azureKey)} (replies, photos, briefings)`);
-  } else {
-    console.log(`[hub] AI: nemotron ${settings.nemotronBaseUrl} model=${settings.nemotronModel} key=${redact(settings.nvidiaKey)}`);
-    console.log(`[hub] AI: gemini briefings model=${settings.geminiModel} key=${redact(settings.geminiKey)}`);
-  }
+  console.log(aiConfigured()
+    ? `[hub] AI: ${settings.aiModel} at ${settings.aiBaseUrl} key=${redact(settings.aiApiKey)} (replies, photos, briefings)`
+    : '[hub] AI: none configured (AI_BASE_URL); using built-in replies and plain summaries');
   const conn = await connect();
   console.log('[hub] connected to SpacetimeDB');
 
@@ -251,7 +252,36 @@ async function main() {
   for (const m of conn.db.message.iter()) void deliver(conn, msgr, m);
   for (const a of conn.db.alert.iter()) void notifyAlert(conn, msgr, a);
 
+  startBoard(conn);
   console.log('[hub] ready');
+}
+
+// ------------------------------------------------------------------ board (SK-AM62B)
+function startBoard(conn: Conn) {
+  if (!settings.boardPort) {
+    console.log('[board] BOARD_PORT not set: no board link (the patient screen still works with the keyboard)');
+    return;
+  }
+  runBoardLink(settings.boardPort, {
+    dir: settings.boardDir, sensitivity: settings.boardSensitivity, led: settings.boardLed, swapLR: settings.boardSwapLR,
+  }, {
+    status: msg => console.log(`[board] ${msg}`),
+    line: l => {
+      switch (l.kind) {
+        case 'command':
+          console.log(`[board] ${l.command}${l.delayMs !== undefined ? ` (${l.delayMs} ms after the movement)` : ''}`);
+          conn.reducers.eyeCommand({ patient: P, command: l.command }).catch(err => console.error('[board] eye_command failed', err));
+          break;
+        case 'heart':
+          if (l.bpm) conn.reducers.heartbeat({ patient: P, bpm: l.bpm, quality: l.quality }).catch(err => console.error('[board] heartbeat failed', err));
+          break;
+        case 'ready': console.log(`[board] model running: ${l.detail}`); break;
+        case 'error': console.error(`[board] ERROR ${l.detail}`); break;
+        case 'alert': console.log(`[board] ${l.detail} (SpacetimeDB raises the caregiver alert from the heart-rate readings)`); break;
+        default: if (l.kind !== 'info' || !/^(blink|led|device)/.test(l.detail)) console.log(`[board] ${l.kind}: ${l.detail}`);
+      }
+    },
+  });
 }
 
 main().catch(err => {

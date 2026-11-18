@@ -1,0 +1,33 @@
+file,subject,action,go_sign,role,label_until_s,description
+neal_blink_every_5s.csv,neal,blink,-1,train,48,"Hard blink every 5 s, small natural blinks between, fast repeated blinks in the last 10 s (not labeled)"
+neal_blink_every_3s.csv,neal,blink,-1,train,,Blink every 3 s
+neal_blink_every_3s_fast_end.csv,neal,blink,-1,train,,"Blink every 3 s, fast repeated blinks from 50 s"
+neal_blink_every_1s.csv,neal,blink,-1,train,,Blink every 1 s
+neal_blink_every_1s_take2.csv,neal,blink,-1,train,,Blink about every 1 s (second session)
+neal_left_every_5s.csv,neal,left,1,train,,"Look left every 5 s, natural blinks throughout, fast repeated looks in the last 10 s"
+neal_left_every_3s.csv,neal,left,1,train,,Look left every 3 s
+neal_left_every_3s_fast_end.csv,neal,left,1,train,,"Look left every 3 s, fast repeated looks from 50 s"
+neal_left_every_1s.csv,neal,left,1,train,,Look left every 1 s
+neal_left_every_1s_take2.csv,neal,left,1,train,,Look left every 1 s (second session)
+neal_right_every_5s.csv,neal,right,-1,train,,"Look right every 5 s, natural blinks throughout, fast repeated looks in the last 10 s"
+neal_right_every_3s.csv,neal,right,-1,train,,Look right every 3 s
+neal_right_every_3s_take2.csv,neal,right,-1,train,,Look right every 3 s (second session)
+neal_right_every_3s_fast_end.csv,neal,right,-1,train,,"Look right every 3 s, fast repeated looks from 50 s"
+neal_right_every_1s.csv,neal,right,-1,train,,Look right every 1 s
+neal_right_rapid.csv,neal,right,-1,train,,Rapid repeated right looks
+neal_rest_looking_up.csv,neal,none,0,control,,"Resting, reading, looked up a couple of times (no commands)"
+neal_rest_looking_up_take2.csv,neal,none,0,control,,Same as above (second session)
+neal_chewing.csv,neal,none,0,control,,Chewing (jaw-muscle noise; no commands)
+neal_scrolling_phone.csv,neal,none,0,control,,Scrolling short videos on a phone (natural eye movements; no commands)
+neal_natural_blinking.csv,neal,none,0,test_control,,"60 s of ordinary blinking with no command intended (never trained on: measures false commands)"
+neal_random_sequence_1.csv,neal,sequence,0,test_sequence,,Random cued commands (data/sequences/random_sequence_1_cues.csv); never trained on
+neal_random_sequence_2.csv,neal,sequence,0,test_sequence,,Random cued commands (data/sequences/random_sequence_2_cues.csv); never trained on
+neal_random_sequence_3.csv,neal,sequence,0,test_sequence,,Random cued commands (data/sequences/random_sequence_3_cues.csv); never trained on
+neal_self_paced_sequence.csv,neal,sequence,0,test_sequence,,Self-paced random commands in the order of data/sequences/self_paced_sequence_order.tsv; never trained on
+neal_board_live_eog.csv,neal,live,0,board_capture,,Live capture on the SK-AM62B through afe4950.py (eye channel)
+neal_board_live_ppg.csv,neal,ppg,0,board_capture,,Live capture on the SK-AM62B through afe4950.py (PPG channel for heart rate)
+person1_blink_every_5s.csv,person1,blink,1,other_subject,,"Second volunteer, electrodes mirrored (red beside the LEFT eye): blink every 5 s"
+person1_blink_every_5s_take2.csv,person1,blink,1,other_subject,,Second volunteer: blink every 5 s (second take)
+person1_left_every_5s.csv,person1,left,-1,other_subject,,Second volunteer: look left every 5 s
+person1_right_every_5s.csv,person1,right,1,other_subject,,Second volunteer: look right every 5 s
+person1_rest.csv,person1,none,0,other_subject,,Second volunteer: resting
