@@ -161,12 +161,4 @@ npm run llm-check             # live check of your AI model: text, tool calls, p
 npm run check-secrets         # scans tracked files for keys (node scripts/install-hooks.mjs adds it as a pre-commit hook)
 ```
 
-## Limits and safety
-
-BlinkTalk is a research prototype, not a medical device. The eye-command model was trained on one person
-with one electrode placement; anyone else should be tested before relying on it (`data/` has recordings from
-a second volunteer for this). Heart rate comes from a fingertip PPG sensor. SOS escalation depends on the
-laptop, the network and Photon being up, so it does not replace a nurse-call system. The AI only drafts:
-nothing is sent without the patient's own selection, except caregiver alerts.
-
 Built by Neal Kapadia.
