@@ -36,19 +36,20 @@ function scriptedFetch(responses: unknown[]) {
 
 const tc = (name: string, args: object, id = name) => ({ id, type: 'function', function: { name, arguments: JSON.stringify(args) } });
 
-test('multi-step tool run: reads context, then proposes 4 replies', async () => {
+test('one call: context goes in the prompt, the model proposes 4 replies', async () => {
   const { ports, calls } = fakePorts();
   const { fn, bodies } = scriptedFetch([
-    { content: null, tool_calls: [tc('get_conversation', {}), tc('get_patient_state', {})] },
     { content: null, tool_calls: [tc('propose_replies', { replies: ['Yes, I am awake.', 'Very tired today.', 'Can you visit?', 'Call me later.'] })] },
   ]);
   const replies = await runAgent({ kind: 'reply', message: { body: 'Are you awake?' } }, ports, fn);
   assert.deepEqual(replies, ['Yes, I am awake.', 'Very tired today.', 'Can you visit?', 'Call me later.']);
   assert.equal(calls.proposed[0][1], 'ai');
-  assert.equal(bodies.length, 2);
+  assert.equal(bodies.length, 1);
   assert.equal(bodies[0].model, 'local-test-model');
-  assert.equal(bodies[0].tools.length, 6, 'tools offered');
-  assert.equal(bodies[1].messages.filter((m: any) => m.role === 'tool').length, 2, 'tool results fed back');
+  assert.equal(bodies[0].tools.length, 2, 'alert + propose offered');
+  const prompt = bodies[0].messages[1].content;
+  assert.match(prompt, /Are you awake\?/, 'conversation in the prompt');
+  assert.match(prompt, /heart_rate_now/, 'patient state in the prompt');
   assert.ok(calls.logs.some(l => l.startsWith('plan:')));
 });
 
@@ -100,7 +101,6 @@ test('reply parser handles JSON, numbered lists and thinking tags', () => {
 test('keywords naming a person: the agent routes each message to the right contact', async () => {
   const { ports, calls } = fakePorts();
   const { fn, bodies } = scriptedFetch([
-    { content: null, tool_calls: [tc('list_contacts', {})] },
     { content: null, tool_calls: [tc('propose_messages', { messages: [
       { to: 'Alex', text: 'Can you bring pho tonight?' }, { to: 'my brother', text: 'Pho after your shift?' },
       { to: 'Mom', text: 'Alex is bringing pho.' }, { to: 'nobody', text: 'Pho please.' }] })] },
@@ -108,7 +108,10 @@ test('keywords naming a person: the agent routes each message to the right conta
   const out = await runAgent({ kind: 'intent', keywords: 'alex pho' }, ports, fn);
   assert.equal(out.length, 4);
   assert.deepEqual(calls.routes[0], [2n, 2n, 1n, 0n]);
-  assert.ok(JSON.parse(bodies[1].messages.find((m: any) => m.role === 'tool').content).some((c: any) => c.name === 'Alex'));
+  assert.equal(bodies.length, 1);
+  assert.deepEqual(bodies[0].tools.map((t: any) => t.function.name), ['propose_messages']);
+  assert.match(bodies[0].messages[1].content, /"name":"Alex","relation":"brother"/, 'contacts in the prompt');
+  assert.match(bodies[0].messages[1].content, /start of a word/, 'partial words like "he" can expand');
 });
 
 test('contact matching handles names, relations and nicknames', () => {

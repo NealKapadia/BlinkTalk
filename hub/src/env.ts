@@ -40,6 +40,8 @@ export const settings = {
   aiModel: env('AI_MODEL'),
   aiVisionModel: env('AI_VISION_MODEL'),       // optional separate model for photos; defaults to AI_MODEL
   aiTimeoutMs: Number(env('AI_TIMEOUT', '20')) * 1000,
+  aiApi: (['chat', 'responses'].includes(env('AI_API')) ? env('AI_API') : 'auto'),
+  aiReasoningEffort: env('AI_REASONING_EFFORT', 'low'),    // minimal | low | medium | high, or empty to leave it off
   // SK-AM62B serial console (empty = no board; the patient screen still works with the keyboard)
   boardPort: env('BOARD_PORT'),
   boardDir: env('BOARD_DIR', '/root/blinktalk'),

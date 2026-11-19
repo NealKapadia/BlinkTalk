@@ -29,12 +29,12 @@ async function main() {
 
   let ok = true;
   ok = (await step('text', async () => (await chatCompletion(fetch, {
-    messages: [{ role: 'user', content: 'Reply with exactly: BlinkTalk ready' }], maxTokens: 20,
+    messages: [{ role: 'user', content: 'Reply with exactly: BlinkTalk ready' }], maxTokens: 200,
   })).content ?? '(empty)')) && ok;
 
   ok = (await step('tool call', async () => {
     const r = await chatCompletion(fetch, {
-      maxTokens: 200,
+      maxTokens: 600, toolChoice: 'required',
       messages: [{ role: 'user', content: 'Give 4 short replies to "Are you awake?" by calling propose_replies.' }],
       tools: [{ type: 'function', function: { name: 'propose_replies', description: 'Return 4 replies',
         parameters: { type: 'object', properties: { replies: { type: 'array', items: { type: 'string' } } }, required: ['replies'] } } }],
@@ -45,7 +45,7 @@ async function main() {
   })) && ok;
 
   ok = (await step('photo', async () => (await chatCompletion(fetch, {
-    vision: true, maxTokens: 60,
+    vision: true, maxTokens: 200,
     messages: [{ role: 'user', content: [
       { type: 'text', text: 'What colour is this image? One word.' },
       { type: 'image_url', image_url: { url: `data:image/png;base64,${PIXEL}` } },

@@ -4,10 +4,10 @@
  * Every glance costs the patient seconds, so the agent turns an incoming text
  * (or 2-3 keywords picked with the eyes) into four complete, first-person
  * replies the patient can send with one double blink. It is not a chatbot: it
- * never answers on the patient's behalf. It plans, calls tools against the live
- * SpacetimeDB state, decides whether caregivers need to know something, and
- * only then proposes replies. Every step is written to the agent_step table so
- * caregivers can watch it work.
+ * never answers on the patient's behalf. The live SpacetimeDB context (conversation,
+ * patient state, contacts) goes into the first request, so a normal run is ONE model
+ * call: the model answers with a propose tool call (or first raises a caregiver alert).
+ * Every step is written to the agent_step table so caregivers can watch it work.
  *
  * With a local model (AI_BASE_URL=http://localhost:11434/v1) the whole system runs with no
  * internet except the messaging channel.
@@ -58,85 +58,46 @@ type ChatMsg =
   | { role: 'tool'; tool_call_id: string; content: string };
 
 
-const TOOLS = [
-  {
-    type: 'function',
-    function: {
-      name: 'get_conversation',
-      description: 'Recent messages between the patient and this contact (plus what the patient said aloud), oldest first.',
-      parameters: { type: 'object', properties: {} },
-    },
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'get_patient_state',
-      description: "The patient's live state: heart rate trend, current status, local time, open alerts, phrases they use most.",
-      parameters: { type: 'object', properties: {} },
-    },
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'alert_caregivers',
-      description: "Text the patient's caregivers. Only for a genuine safety concern: the message reports an emergency, or the patient's state looks medically worrying.",
-      parameters: { type: 'object', properties: { reason: { type: 'string' } }, required: ['reason'] },
-    },
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'list_contacts',
-      description: 'People the patient can text, with their relation (mother, brother, nurse...).',
-      parameters: { type: 'object', properties: {} },
-    },
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'propose_messages',
-      description: 'Finish (for keywords): exactly 4 complete messages, each addressed to the person it is for. Use names from list_contacts.',
-      parameters: {
-        type: 'object',
-        properties: {
-          messages: {
-            type: 'array',
-            items: { type: 'object', properties: { to: { type: 'string' }, text: { type: 'string' } }, required: ['to', 'text'] },
-          },
-        },
-        required: ['messages'],
-      },
-    },
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'propose_replies',
-      description: 'Finish: give exactly 4 short first-person replies the patient can send with one selection.',
-      parameters: {
-        type: 'object',
-        properties: { replies: { type: 'array', items: { type: 'string' } } },
-        required: ['replies'],
-      },
-    },
-  },
-] as const;
+const tool = (name: string, description: string, parameters: object) => ({ type: 'function', function: { name, description, parameters } });
+
+const ALERT = tool('alert_caregivers',
+  "Text the patient's caregivers. Only for a genuine safety concern: the message reports an emergency, or the patient's state looks medically worrying.",
+  { type: 'object', properties: { reason: { type: 'string' } }, required: ['reason'] });
+const PROPOSE_MESSAGES = tool('propose_messages',
+  'Exactly 4 complete messages, each addressed to the person it is for (a name from the contacts).',
+  { type: 'object', properties: { messages: { type: 'array', items: { type: 'object', properties: { to: { type: 'string' }, text: { type: 'string' } }, required: ['to', 'text'] } } }, required: ['messages'] });
+const PROPOSE_REPLIES = tool('propose_replies',
+  'Exactly 4 short first-person replies the patient can send with one selection.',
+  { type: 'object', properties: { replies: { type: 'array', items: { type: 'string' } } }, required: ['replies'] });
+
+/** Keywords → routed messages; an incoming text → replies (with the option to alert caregivers first). */
+export const toolsFor = (task: Task) => (task.kind === 'intent' ? [PROPOSE_MESSAGES] : [ALERT, PROPOSE_REPLIES]);
 
 function systemPrompt(name: string): string {
   return [
     `You are the communication agent inside BlinkTalk. ${name} cannot speak or type; they control a screen with eye movements, and every selection costs several seconds.`,
     'You never message anyone yourself. You prepare 4 reply options that sound like the patient: first person, warm, plain, at most 12 words each.',
-    'Make the 4 options meaningfully different (for example yes / no / not now / a question back). Use facts from the tools; never invent plans, names or medical facts.',
-    'Workflow: 1) call get_conversation and get_patient_state; 2) call alert_caregivers only if there is a genuine safety concern; 3) call propose_replies.',
+    'Make the 4 options meaningfully different (for example yes / no / not now / a question back). Use only facts from the context; never invent plans, names or medical facts.',
+    'Answer straight away with one tool call. Call alert_caregivers first only if there is a genuine safety concern.',
     'Text like "[Photo: ...]" is a description of a photo they were sent; reply to the photo naturally (e.g. "That looks delicious!").',
   ].join('\n');
 }
 
-function taskPrompt(task: Task, contact: { name: string; relation: string }): string {
+function context(ports: AgentPorts): string {
+  return JSON.stringify({
+    conversation: ports.conversation().slice(-20),
+    patient_state: ports.patientState(),
+    contacts: ports.contacts().map(c => ({ name: c.name, relation: c.relation })),
+  });
+}
+
+function taskPrompt(task: Task, contact: { name: string; relation: string }, ports: AgentPorts): string {
+  const ctx = `Context: ${context(ports)}`;
   if (task.kind === 'intent') {
-    return `The patient selected these keywords with their eyes: "${task.keywords}". Work out who each message is for (a name or relation in the keywords, otherwise ${contact.name}): call list_contacts, read the conversation, then call propose_messages with 4 complete messages, each addressed to the right person. Offer different people if the keywords are ambiguous.`;
+    return `${ctx}\n\nThe patient spelled these keywords with their eyes: "${task.keywords}" (they may be the start of a word, e.g. "he" for "hello"). ` +
+      `Work out who each message is for (a name or relation in the keywords, otherwise ${contact.name}) and call propose_messages with 4 complete messages. Offer different people if the keywords are ambiguous.`;
   }
-  return `New message from ${contact.name} (${contact.relation || 'unknown relation'}): "${task.message.body}". Follow the workflow.`;
+  return `${ctx}\n\nNew message from ${contact.name} (${contact.relation || 'unknown relation'}): "${task.message.body}". Call propose_replies.`;
 }
 
 export function stripThinking(s: string): string {
@@ -158,8 +119,8 @@ export function parseRepliesFromText(s: string): string[] | null {
 
 export const agentConfigured = aiConfigured;
 
-async function chat(fetchFn: Fetch, messages: ChatMsg[], useTools: boolean): Promise<{ content: string | null; tool_calls?: ToolCall[] }> {
-  return chatCompletion(fetchFn, { messages, tools: useTools ? TOOLS : undefined, maxTokens: 800 });
+async function chat(fetchFn: Fetch, messages: ChatMsg[], tools: readonly unknown[] | undefined): Promise<{ content: string | null; tool_calls?: ToolCall[] }> {
+  return chatCompletion(fetchFn, { messages, tools, toolChoice: tools ? 'required' : undefined, maxTokens: 600 });
 }
 
 function clampReplies(replies: unknown[]): string[] {
@@ -226,7 +187,7 @@ export async function runAgent(task: Task, ports: AgentPorts, fetchFn: Fetch = f
 
   await log('plan', task.kind === 'reply'
     ? `Text from ${contact.name}. Plan: read the conversation and ${ports.patientName}'s state, check whether caregivers need to know, draft 4 replies.`
-    : `${ports.patientName} picked "${task.keywords}". Plan: read the conversation, expand into 4 full replies.`);
+    : `${ports.patientName} picked "${task.keywords}". Plan: expand into 4 full messages for the right people.`);
 
   const finish = async (replies: string[], source: 'ai' | 'fallback') => {
     await ports.propose(replies, source);
@@ -242,19 +203,20 @@ export async function runAgent(task: Task, ports: AgentPorts, fetchFn: Fetch = f
 
   const messages: ChatMsg[] = [
     { role: 'system', content: systemPrompt(ports.patientName) },
-    { role: 'user', content: taskPrompt(task, contact) },
+    { role: 'user', content: taskPrompt(task, contact, ports) },
   ];
   let useTools = true;
+  const started = Date.now();
 
-  for (let turn = 0; turn < 6; turn++) {
+  for (let turn = 0; turn < 3; turn++) {
     let msg;
     try {
-      msg = await chat(fetchFn, messages, useTools);
+      msg = await chat(fetchFn, messages, useTools ? toolsFor(task) : undefined);
     } catch (err: any) {
       if (useTools && err?.status && err.status >= 400 && err.status < 500) {
         await log('retry', `Tool calling rejected (${err.status}); retrying in JSON mode.`);
         useTools = false;
-        messages.push({ role: 'user', content: `Tools are unavailable. Context: conversation=${JSON.stringify(ports.conversation())} state=${JSON.stringify(ports.patientState())}. Reply ONLY with JSON: {"replies":["","","",""]}` });
+        messages.push({ role: 'user', content: 'Tools are unavailable. Reply ONLY with JSON: {"replies":["","","",""]}' });
         continue;
       }
       return finishFallback(`AI model unavailable (${String(err?.message ?? err).slice(0, 160)}).`);
@@ -266,7 +228,7 @@ export async function runAgent(task: Task, ports: AgentPorts, fetchFn: Fetch = f
       const replies = parsed ? clampReplies(parsed) : [];
       if (replies.length >= 2) return finish(replies, 'ai');
       messages.push({ role: 'assistant', content: msg.content ?? '' });
-      messages.push({ role: 'user', content: 'Call propose_replies with exactly 4 replies now.' });
+      messages.push({ role: 'user', content: `Call ${task.kind === 'intent' ? 'propose_messages' : 'propose_replies'} with exactly 4 options now.` });
       continue;
     }
 
@@ -276,15 +238,6 @@ export async function runAgent(task: Task, ports: AgentPorts, fetchFn: Fetch = f
       try { args = JSON.parse(call.function.arguments || '{}'); } catch { /* keep {} */ }
       let result: unknown;
       switch (call.function.name) {
-        case 'get_conversation':
-          result = ports.conversation();
-          break;
-        case 'get_patient_state':
-          result = ports.patientState();
-          break;
-        case 'list_contacts':
-          result = ports.contacts().map(c => ({ name: c.name, relation: c.relation }));
-          break;
         case 'propose_messages': {
           const items = (Array.isArray(args.messages) ? args.messages : []).filter((m: any) => m && m.text);
           const texts = clampReplies(items.map((m: any) => m.text));
@@ -294,7 +247,7 @@ export async function runAgent(task: Task, ports: AgentPorts, fetchFn: Fetch = f
               const m = items.find((x: any) => stripThinking(String(x.text)).replace(/\s+/g, ' ').trim().slice(0, 140) === t);
               return resolveContact(String(m?.to ?? ''), people) ?? 0n;
             });
-            await log('tool', `propose_messages(${texts.map((t, i) => `${people.find(p => p.id === to[i])?.name ?? 'reply'}: ${t}`).join(' | ').slice(0, 300)})`);
+            await log('tool', `propose_messages in ${((Date.now() - started) / 1000).toFixed(1)} s (${texts.map((t, i) => `${people.find(p => p.id === to[i])?.name ?? 'reply'}: ${t}`).join(' | ').slice(0, 300)})`);
             await ports.propose(texts, 'ai', to);
             await log('reply', texts.join(' | '));
             return texts;
@@ -309,7 +262,7 @@ export async function runAgent(task: Task, ports: AgentPorts, fetchFn: Fetch = f
         case 'propose_replies': {
           const replies = clampReplies(Array.isArray(args.replies) ? args.replies : []);
           if (replies.length >= 2) {
-            await log('tool', `propose_replies(${replies.length} options)`);
+            await log('tool', `propose_replies: ${replies.length} options in ${((Date.now() - started) / 1000).toFixed(1)} s`);
             return finish(replies, 'ai');
           }
           result = { error: 'need 4 non-empty replies' };
@@ -322,5 +275,5 @@ export async function runAgent(task: Task, ports: AgentPorts, fetchFn: Fetch = f
       messages.push({ role: 'tool', tool_call_id: call.id, content: JSON.stringify(result) });
     }
   }
-  return finishFallback('Agent did not finish in 6 steps.');
+  return finishFallback('Agent did not finish in 3 steps.');
 }
