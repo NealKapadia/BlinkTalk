@@ -8,6 +8,12 @@ BlinkTalk reads eye movements from three electrodes on the face, recognises comm
 board, and turns them into speech, iMessages and SOS alerts. Family can follow the conversation live and
 get alerted from anywhere.
 
+**Full write-up:** [BlinkTalk project report (PDF)](docs/BlinkTalk_Report.pdf)
+
+| Patient screen | Caregiver dashboard |
+|---|---|
+| ![Patient screen: eyes-only speller with AI-drafted replies](docs/figures/patient_screen.png) | ![Caregiver dashboard: live eye trace, heart rate, conversation, care circle](docs/figures/caregiver_dashboard.png) |
+
 ![How BlinkTalk recognises a command](docs/figures/pipeline.png)
 
 ## How it works
@@ -51,11 +57,14 @@ Measured with the C recognizer that runs on the board, on recordings it was neve
 | Random cued and self-paced command sequences (67 commands) | **63 / 67 recognised (94%)** |
 | Rest, chewing, scrolling a phone (3.8 min) | **0 false commands** |
 | Ordinary blinking with no command meant (1 min) | 7 false "select" (double blinks), no false on/off or SOS |
-| Latency | looks ~0.9 s after the movement; blink commands ~2 s after the last blink |
+| Held-out development recordings (496 commands) | **94.2%** (blink 95%, left 94%, right 93%) |
+| Latency, measured live on the board | looks: 808 ms from the start of the movement; blink commands (select, on/off, SOS): 1,224 ms from the first blink |
 | Footprint on the AM62B | ~120 KB of model tables, ~200 KB of state, no heap allocation |
 
 How the model is trained and tested, with the per-recording numbers: [training/README.md](training/README.md).
 All the recordings are in [data/](data).
+
+![Per-command accuracy and confusions on 496 held-out commands](docs/figures/accuracy_by_command.png)
 
 ## Repository
 
@@ -68,7 +77,7 @@ All the recordings are in [data/](data).
 | [`dashboard/`](dashboard) | React + Vite: the eyes-only patient screen and the caregiver dashboard |
 | [`training/`](training) | Rebuilds the eye-command model from the recordings and tests it end to end |
 | [`data/`](data) | Every recording used for training and testing, with a manifest |
-| [`docs/`](docs) | [Board setup](docs/BOARD_SETUP.md) and figures |
+| [`docs/`](docs) | [Project report](docs/BlinkTalk_Report.pdf), [board setup](docs/BOARD_SETUP.md) and figures |
 | [`scripts/`](scripts) | `npm start` launcher, end-to-end test, AI and Photon checks, serial port list, secret scanner |
 | [`deploy/`](deploy) | Container for an always-on hub + dashboard |
 
@@ -153,7 +162,7 @@ answered once.
 ## Tests
 
 ```powershell
-npm test                      # 47 tests: SpacetimeDB module (9), hub (31: board link, AI agent, briefings, Photon), patient screen (7)
+npm test                      # 50 tests: SpacetimeDB module (9), hub (34: board link, AI agent, briefings, Photon), patient screen (7)
 npm run e2e                   # 20 end-to-end checks against a running SpacetimeDB (hub spawned, Photon simulated)
 python board/test_board.py    # board program replaying recordings (Linux, WSL, or on the board)
 python training/evaluate.py   # end-to-end accuracy of the eye-command model (needs gcc)

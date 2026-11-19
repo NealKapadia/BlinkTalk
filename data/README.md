@@ -28,8 +28,8 @@ signal up, and a right look or a blink pushes it down (the blink is a short dip 
 | **Controls** (Neal) | `neal_rest_looking_up*.csv`, `neal_chewing.csv`, `neal_scrolling_phone.csv` | Training as "no command", and measuring false commands. |
 | **Natural blinking** (Neal) | `neal_natural_blinking.csv` | Test only: 60 s of ordinary blinking with no command meant. |
 | **Random sequences** (Neal) | `neal_random_sequence_{1,2,3}.csv`, `neal_self_paced_sequence.csv` | Test only, never trained on. The cues are in [`sequences/`](sequences): the prompter (`training/prompter.html`) showed 16 random commands at the times in `random_sequence_N_cues.csv`; the self-paced one follows the order in `self_paced_sequence_order.tsv`. |
-| **Live board capture** | `neal_board_live_eog.csv`, `neal_board_live_ppg.csv` | A capture made on the SK-AM62B itself (eye channel + PPG for heart rate). |
-| **Second volunteer** | `person1_*.csv` | Not used by the current model. Recorded with the electrodes mirrored (red beside the left eye), so left and right are swapped. Kept to test how well the model transfers to another person. |
+| **Live board capture** | `neal_board_live_eog.csv`, `neal_board_live_ppg.csv` | Training. A capture made on the SK-AM62B itself (eye channel + PPG for heart rate). |
+| **Second volunteer** | `person1_*.csv` | Training. Recorded with the electrodes mirrored (red beside the left eye), so left and right are swapped. |
 
 Cue codes in `sequences/`: `b` one blink, `s` two quick blinks (select), `l` look left, `r` look right,
 `sos` three quick blinks. These sequences were recorded when three blinks meant SOS; today three blinks
