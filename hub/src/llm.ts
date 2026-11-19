@@ -156,7 +156,7 @@ async function viaResponses(fetchFn: Fetch, req: ChatRequest): Promise<ChatReply
 const refusesEffort = (e: LlmError) => e.status === 400 && /reasoning/i.test(e.message);
 const refusesMaxTokens = (e: LlmError) => e.status === 400 && /max_completion_tokens/.test(e.message);
 const wantsResponses = (e: LlmError) =>
-  (e.status === 400 || e.status === 404) && /OperationNotSupported|chat ?completions? operation|responses api|use the responses/i.test(e.message);
+  (e.status === 400 || e.status === 404) && /OperationNotSupported|chat ?completions? operation|responses api|use the responses|\/v1\/responses/i.test(e.message);
 
 /** One model call. Throws LlmError on failure. */
 export async function chatCompletion(fetchFn: Fetch, req: ChatRequest): Promise<ChatReply> {
@@ -166,9 +166,9 @@ export async function chatCompletion(fetchFn: Fetch, req: ChatRequest): Promise<
       return state.api === 'responses' ? await viaResponses(fetchFn, req) : await viaChat(fetchFn, req);
     } catch (err) {
       if (!(err instanceof LlmError)) throw err;
+      if (state.api === 'auto' && wantsResponses(err)) { state.api = 'responses'; continue; }   // before dropping anything
       if (state.effort && refusesEffort(err)) { state.effort = ''; continue; }
       if (state.api !== 'responses' && state.maxTokensKey === 'max_completion_tokens' && refusesMaxTokens(err)) { state.maxTokensKey = 'max_tokens'; continue; }
-      if (state.api === 'auto' && wantsResponses(err)) { state.api = 'responses'; continue; }
       throw err;
     }
   }

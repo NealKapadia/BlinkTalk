@@ -64,6 +64,23 @@ test('agent: one call to {AI_BASE_URL}/chat/completions with the model, both aut
   for (const k of ['temperature', 'top_p', 'max_tokens']) assert.equal(k in calls[0].body, false, k);
 });
 
+test('gpt-6-luna style refusal ("use /v1/responses"): switches to the Responses API and keeps the reasoning effort', async () => {
+  resetLlmState();
+  const calls: any[] = [];
+  const fn = (async (url: string, init: any) => {
+    calls.push({ url, body: JSON.parse(init.body) });
+    if (url.endsWith('/chat/completions')) {
+      return new Response(JSON.stringify({ error: { param: 'reasoning_effort', message: "Function tools with reasoning_effort are not supported for gpt-6-luna in /v1/chat/completions. To use function tools, use /v1/responses or set reasoning_effort to 'none'." } }), { status: 400 });
+    }
+    return new Response(JSON.stringify({ output: [{ type: 'function_call', call_id: 'c1', name: 'propose_replies', arguments: JSON.stringify({ replies: ['Yes.', 'No.', 'Later.', 'Why?'] }) }] }), { status: 200 });
+  }) as unknown as typeof fetch;
+  const { ports: p } = ports();
+  assert.deepEqual(await runAgent({ kind: 'reply', message: { body: 'Hi?' } }, p, fn), ['Yes.', 'No.', 'Later.', 'Why?']);
+  assert.match(calls[1].url, /\/responses$/);
+  assert.deepEqual(calls[1].body.reasoning, { effort: 'low' });
+  resetLlmState();
+});
+
 test('a model that refuses reasoning_effort is retried once without it', async () => {
   resetLlmState();
   const { fn, calls } = recorder([

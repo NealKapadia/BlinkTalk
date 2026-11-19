@@ -4,8 +4,9 @@
  * Every glance costs the patient seconds, so the agent turns an incoming text
  * (or 2-3 keywords picked with the eyes) into four complete, first-person
  * replies the patient can send with one double blink. It is not a chatbot: it
- * never answers on the patient's behalf. The live SpacetimeDB context (conversation,
- * patient state, contacts) goes into the first request, so a normal run is ONE model
+ * never answers on the patient's behalf. Two jobs: an incoming text -> 4 replies (only when a
+ * message arrives), and "AI expand" -> 4 completions of what the patient started spelling (never a
+ * reply to anyone). The live SpacetimeDB context goes into the first request, so a normal run is ONE model
  * call: the model answers with a propose tool call (or first raises a caregiver alert).
  * Every step is written to the agent_step table so caregivers can watch it work.
  *
@@ -73,17 +74,27 @@ const PROPOSE_REPLIES = tool('propose_replies',
 /** Keywords → routed messages; an incoming text → replies (with the option to alert caregivers first). */
 export const toolsFor = (task: Task) => (task.kind === 'intent' ? [PROPOSE_MESSAGES] : [ALERT, PROPOSE_REPLIES]);
 
-function systemPrompt(name: string): string {
+function systemPrompt(name: string, kind: Task['kind']): string {
+  const intro = `You are the communication agent inside BlinkTalk. ${name} cannot speak or type; they control a screen with eye movements, and every selection costs several seconds.`;
+  if (kind === 'intent') {
+    return [
+      intro,
+      `${name} has started spelling something THEY want to say. Your job is to finish their sentence for them, like autocomplete: never answer it, never reply to anyone, never add your own opinion.`,
+      'Every option must keep their words and meaning: expand partial words ("he" -> "Hello", "wat" -> "water") and short keywords into complete, natural first-person sentences, at most 12 words each.',
+      'Give 4 different completions of the same idea (different wording, a statement and a request, with or without a greeting). Never invent plans, names or medical facts.',
+      'Answer straight away with one tool call.',
+    ].join('\n');
+  }
   return [
-    `You are the communication agent inside BlinkTalk. ${name} cannot speak or type; they control a screen with eye movements, and every selection costs several seconds.`,
-    'You never message anyone yourself. You prepare 4 reply options that sound like the patient: first person, warm, plain, at most 12 words each.',
+    intro,
+    'Someone has just texted them. You never message anyone yourself. You prepare 4 reply options that sound like the patient: first person, warm, plain, at most 12 words each.',
     'Make the 4 options meaningfully different (for example yes / no / not now / a question back). Use only facts from the context; never invent plans, names or medical facts.',
     'Answer straight away with one tool call. Call alert_caregivers first only if there is a genuine safety concern.',
     'Text like "[Photo: ...]" is a description of a photo they were sent; reply to the photo naturally (e.g. "That looks delicious!").',
   ].join('\n');
 }
 
-function context(ports: AgentPorts): string {
+function replyContext(ports: AgentPorts): string {
   return JSON.stringify({
     conversation: ports.conversation().slice(-20),
     patient_state: ports.patientState(),
@@ -92,12 +103,18 @@ function context(ports: AgentPorts): string {
 }
 
 function taskPrompt(task: Task, contact: { name: string; relation: string }, ports: AgentPorts): string {
-  const ctx = `Context: ${context(ports)}`;
   if (task.kind === 'intent') {
-    return `${ctx}\n\nThe patient spelled these keywords with their eyes: "${task.keywords}" (they may be the start of a word, e.g. "he" for "hello"). ` +
-      `Work out who each message is for (a name or relation in the keywords, otherwise ${contact.name}) and call propose_messages with 4 complete messages. Offer different people if the keywords are ambiguous.`;
+    // No conversation here on purpose: with it, models answer the last message instead of finishing the patient's words.
+    const state = ports.patientState() as { favourite_phrases?: unknown };
+    const ctx = JSON.stringify({
+      contacts: ports.contacts().map(c => ({ name: c.name, relation: c.relation })),
+      phrases_they_often_use: state.favourite_phrases ?? [],
+    });
+    return `Context: ${ctx}\n\nThe patient has spelled: "${task.keywords}". These are the start of what they want to say ` +
+      '(they may be partial words, e.g. "he" for "hello", or keywords such as "alex pho"). ' +
+      `Call propose_messages with 4 complete sentences that say what they mean. Send each to the person named in their words (a name or relation from the contacts), otherwise to ${contact.name}.`;
   }
-  return `${ctx}\n\nNew message from ${contact.name} (${contact.relation || 'unknown relation'}): "${task.message.body}". Call propose_replies.`;
+  return `Context: ${replyContext(ports)}\n\nNew message from ${contact.name} (${contact.relation || 'unknown relation'}): "${task.message.body}". Call propose_replies.`;
 }
 
 export function stripThinking(s: string): string {
@@ -202,7 +219,7 @@ export async function runAgent(task: Task, ports: AgentPorts, fetchFn: Fetch = f
   if (!agentConfigured()) return finishFallback('No AI model configured (AI_BASE_URL); using built-in replies.');
 
   const messages: ChatMsg[] = [
-    { role: 'system', content: systemPrompt(ports.patientName) },
+    { role: 'system', content: systemPrompt(ports.patientName, task.kind) },
     { role: 'user', content: taskPrompt(task, contact, ports) },
   ];
   let useTools = true;

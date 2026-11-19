@@ -50,6 +50,7 @@ test('one call: context goes in the prompt, the model proposes 4 replies', async
   const prompt = bodies[0].messages[1].content;
   assert.match(prompt, /Are you awake\?/, 'conversation in the prompt');
   assert.match(prompt, /heart_rate_now/, 'patient state in the prompt');
+  assert.match(bodies[0].messages[0].content, /Someone has just texted them/);
   assert.ok(calls.logs.some(l => l.startsWith('plan:')));
 });
 
@@ -111,7 +112,10 @@ test('keywords naming a person: the agent routes each message to the right conta
   assert.equal(bodies.length, 1);
   assert.deepEqual(bodies[0].tools.map((t: any) => t.function.name), ['propose_messages']);
   assert.match(bodies[0].messages[1].content, /"name":"Alex","relation":"brother"/, 'contacts in the prompt');
-  assert.match(bodies[0].messages[1].content, /start of a word/, 'partial words like "he" can expand');
+  assert.match(bodies[0].messages[1].content, /"he" for "hello"/, 'partial words like "he" can expand');
+  assert.doesNotMatch(bodies[0].messages[1].content, /Are you awake/, 'no conversation: expand finishes the patient\'s words, it does not reply');
+  assert.match(bodies[0].messages[0].content, /finish their sentence/);
+  assert.doesNotMatch(bodies[0].messages[0].content, /reply options/);
 });
 
 test('contact matching handles names, relations and nicknames', () => {
